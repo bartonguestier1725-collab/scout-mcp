@@ -1,0 +1,32 @@
+{
+  "name": "scout-mcp",
+  "version": "0.1.0",
+  "description": "Multi-source intelligence reconnaissance MCP server",
+  "type": "module",
+  "main": "build/index.js",
+  "bin": {
+    "scout-cli": "build/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node build/index.js",
+    "cli": "node build/cli.js"
+  },
+  "keywords": [
+    "mcp",
+    "scout",
+    "intelligence",
+    "search"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "dotenv": "^17.3.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.9.3"
+  }
+}
