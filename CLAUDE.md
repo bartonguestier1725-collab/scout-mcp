@@ -179,9 +179,10 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 ## 既知の制限事項
 
 1. **PyPI 検索はパッケージ名ベース** — PyPI Web 検索が Cloudflare bot 対策で保護されているため、パッケージ名候補を生成して JSON API で直接 lookup する方式。キーワード検索には弱い
-2. **X 検索は LLM 経由** — xAI の Responses API (grok-4.1-fast) + web_search で X を検索するため、レスポンスの構造が不安定なことがある
-3. **Product Hunt は未テスト** — 認証情報（PH_CLIENT_ID / PH_CLIENT_SECRET）未取得のため動作未確認
-4. **レート制限** — GitHub は認証なし 10 req/min、認証あり 30 req/min。短時間の連続使用で 429 になる可能性あり
+2. **PyPI 障害と 0 件の区別不可（既知の運用リスク）** — `pypi_search` は候補 lookup の失敗（404 も 5xx も）を全て null に潰すため、PyPI API 障害時も `success: true, count: 0` を返す。scout_report 側で障害と 0 件を区別できない。次フェーズで 404 のみ null、その他は fail に分離する予定
+3. **X 検索は LLM 経由** — xAI の Responses API (grok-4.1-fast) + web_search で X を検索するため、レスポンスの構造が不安定なことがある
+4. **Product Hunt は未テスト** — 認証情報（PH_CLIENT_ID / PH_CLIENT_SECRET）未取得のため動作未確認
+5. **レート制限** — GitHub は認証なし 10 req/min、認証あり 30 req/min。短時間の連続使用で 429 になる可能性あり
 
 ---
 

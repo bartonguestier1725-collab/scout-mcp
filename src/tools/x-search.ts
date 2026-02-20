@@ -95,16 +95,19 @@ Return up to ${per_page} results. Only return the JSON array, no other text.`;
       }
     }
 
-    // Try to parse the LLM's structured output
+    // Try to parse the LLM's structured output, fall back to web search results
     let posts: unknown[] = [];
     try {
-      // Find JSON array in the output
       const jsonMatch = outputText.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         posts = JSON.parse(jsonMatch[0]);
       }
     } catch {
-      // If parsing fails, use web search results as fallback
+      // JSON parse failed — will fall through to webResults fallback below
+    }
+
+    // Fallback: if LLM didn't produce usable JSON, use raw web search results
+    if (posts.length === 0 && webResults.length > 0) {
       posts = webResults.map((r) => ({
         title: r.title,
         url: r.url,

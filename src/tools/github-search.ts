@@ -1,5 +1,5 @@
 /**
- * github_search – GitHub リポジトリ / コード / Issue 検索
+ * github_search – GitHub リポジトリ検索
  *
  * API: https://docs.github.com/en/rest/search
  * 認証: GITHUB_TOKEN 推奨（レート制限 10→30 req/min）

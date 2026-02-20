@@ -98,8 +98,9 @@ export async function execute(args: {
     const token = await getAccessToken();
 
     const res = await safeFetchJson<{
-      data: {
-        posts: {
+      errors?: Array<{ message: string }>;
+      data?: {
+        posts?: {
           edges: Array<{
             node: {
               id: string;
@@ -129,6 +130,16 @@ export async function execute(args: {
         variables: { query, first: Math.min(per_page, 20) },
       }),
     });
+
+    // GraphQL returns HTTP 200 even on errors — check explicitly
+    if (res.errors?.length) {
+      const msg = res.errors.map((e) => e.message).join("; ");
+      return fail("producthunt", query, `GraphQL error: ${msg}`, Date.now() - start);
+    }
+
+    if (!res.data?.posts?.edges) {
+      return fail("producthunt", query, "Unexpected response: missing data.posts.edges", Date.now() - start);
+    }
 
     const items = res.data.posts.edges.map((e) => {
       const p = e.node;
