@@ -64,13 +64,13 @@ scout-mcp/
 
 | # | ツール名 | ソース | 認証 | コスト | 状態 |
 |---|----------|--------|------|--------|------|
-| 1 | `x_search` | xAI Grok API | XAI_API_KEY 必須 | ~$0.005/回 | 実装済 |
+| 1 | `x_search` | xAI Grok API | XAI_API_KEY 必須 | ~$0.005/回 | 動作確認済 |
 | 2 | `hackernews_search` | HN Algolia API | 不要 | 無料 | 動作確認済 |
 | 3 | `npm_search` | npm Registry API | 不要 | 無料 | 動作確認済 |
 | 4 | `github_search` | GitHub REST API | GITHUB_TOKEN 設定済 | 無料 | 動作確認済 |
 | 5 | `github_repo_info` | GitHub REST API | GITHUB_TOKEN 設定済 | 無料 | ビルド確認済 |
 | 6 | `pypi_search` | PyPI JSON API | 不要 | 無料 | 動作確認済 |
-| 7 | `producthunt_search` | PH GraphQL API | PH_CLIENT_* 必須 | 無料 | 認証情報未取得 |
+| 7 | `producthunt_search` | PH GraphQL API | PH_CLIENT_* 必須 | 無料 | 動作確認済 |
 | 8 | `scout_report` | 上記を並列合成 | 各ソースに依存 | X 使用時課金 | 動作確認済 |
 
 ### scout_report の focus プリセット
@@ -169,27 +169,24 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 - ArXiv (search API)
 - Stack Overflow (API)
 
-### Product Hunt 有効化
-- https://www.producthunt.com/v2/oauth/applications で Developer App を作成
-- PH_CLIENT_ID / PH_CLIENT_SECRET を .env に設定
-- テスト: `node build/cli.js producthunt_search '{"query":"AI"}'`
-
 ---
 
 ## 既知の制限事項
 
 1. **PyPI 検索はパッケージ名ベース** — PyPI Web 検索が Cloudflare bot 対策で保護されているため、パッケージ名候補を生成して JSON API で直接 lookup する方式。キーワード検索には弱い
 2. **PyPI 障害と 0 件の区別不可（既知の運用リスク）** — `pypi_search` は候補 lookup の失敗（404 も 5xx も）を全て null に潰すため、PyPI API 障害時も `success: true, count: 0` を返す。scout_report 側で障害と 0 件を区別できない。次フェーズで 404 のみ null、その他は fail に分離する予定
-3. **X 検索は LLM 経由** — xAI の Responses API (grok-4.1-fast) + web_search で X を検索するため、レスポンスの構造が不安定なことがある
-4. **Product Hunt は未テスト** — 認証情報（PH_CLIENT_ID / PH_CLIENT_SECRET）未取得のため動作未確認
+3. **X 検索は LLM 経由** — xAI の Responses API (grok-4-1-fast-non-reasoning) + web_search で X を検索するため、レスポンスの構造が不安定なことがある。`tool_choice: "required"` で web search を強制し、JSON パース失敗時は url_citation からフォールバック構築する
+4. **Product Hunt は topic ベース** — PH GraphQL API の posts クエリに search 引数がないため、query を topic スラッグに変換して検索。該当なければ最新投稿をクライアントサイドでキーワードフィルタする
 5. **レート制限** — GitHub は認証なし 10 req/min、認証あり 30 req/min。短時間の連続使用で 429 になる可能性あり
 
 ---
 
 ## 開発経緯
 
-- **2026-02-20**: 初期実装。Phase 1-4 を 1 セッションで完了
-  - HN, npm, GitHub, PyPI, scout_report (free sources) の動作確認済み
-  - X は課金を避けるためテスト保留中（XAI_API_KEY は .env にプレースホルダのみ）
-  - Product Hunt は認証情報未取得のためテスト保留中
-  - PyPI は当初 HTML スクレイピング方式だったが Cloudflare で遮断されたため JSON API + 名前候補方式に変更
+- **2026-02-20**: 初期実装。Phase 1-4 を 1 セッションで完了、全 6 ソース動作確認済み
+  - HN, npm, GitHub, PyPI: 問題なく動作
+  - X: xAI Responses API のモデル名・レスポンス構造が想定と異なり修正（grok-4-1-fast-non-reasoning, tool_choice: required）
+  - Product Hunt: GraphQL API に search 引数がなく、topic ベース + クライアントサイドフィルタに設計変更
+  - PyPI: 当初 HTML スクレイピング方式だったが Cloudflare で遮断されたため JSON API + 名前候補方式に変更
+  - scout_report comprehensive モードで 6/6 ソース成功確認（15件, ~19秒）
+  - 外部レビュー指摘 5 件中 2 件（x_search fallback バグ、PH GraphQL エラー処理）を修正
