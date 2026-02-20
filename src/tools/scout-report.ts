@@ -115,7 +115,7 @@ export async function execute(args: {
 export function register(server: McpServer): void {
   server.registerTool("scout_report", {
     description:
-      "Run a multi-source intelligence report. Searches across HN, GitHub, npm, PyPI, X, and Product Hunt in parallel. Use 'focus' to control source selection: 'balanced' (free APIs only), 'trending' (HN+X+PH), 'comprehensive' (all 6). Or specify exact sources.",
+      "Run a multi-source intelligence report. Searches across HN, GitHub, npm, PyPI, X, and Product Hunt in parallel. Use 'focus' to control source selection: 'balanced' (free APIs only), 'trending' (HN+X+PH), 'comprehensive' (all 6). Or specify exact sources. X search uses xAI Grok API (~$0.005/call).",
     inputSchema: {
       query: z.string().describe("Search query to scout across sources"),
       sources: z
