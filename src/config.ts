@@ -3,9 +3,30 @@
  *
  * Environment variables are read once at import time.
  * Missing optional keys are empty strings (tools check at execution time).
+ *
+ * dotenv は process.cwd() ではなくスクリプトの場所を基準に .env を探す。
+ * MCP サーバーとして起動される場合、cwd がプロジェクトルートとは限らないため。
  */
 
-import "dotenv/config";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parse } from "dotenv";
+
+// dotenv v17 は config() 呼び出し時に console.log でログを出す。
+// MCP サーバーでは stdout = JSON-RPC 専用なので、手動で parse + 注入する。
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const envPath = resolve(__dirname, "..", ".env");
+try {
+  const parsed = parse(readFileSync(envPath, "utf8"));
+  for (const [key, value] of Object.entries(parsed)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+} catch {
+  // .env が存在しない場合は process.env のみに依存
+}
 
 export const config = {
   // xAI Grok API (required for x_search)
