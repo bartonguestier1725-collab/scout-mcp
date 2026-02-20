@@ -1,11 +1,11 @@
 /**
  * x_search – X (Twitter) 検索 via xAI Grok API
  *
- * xAI の Responses API (grok-4.1-fast) を使い、
+ * xAI の Responses API (grok-4-1-fast-non-reasoning) を使い、
  * web_search ツールで X の投稿を検索する。
  *
  * 認証: XAI_API_KEY 必須
- * コスト: ~$0.005/回 (input $0.30/M + output $0.50/M tokens)
+ * コスト: ~$0.003/回 (usage.cost_in_usd_ticks で正確に取得)
  */
 
 import { z } from "zod";
@@ -16,26 +16,26 @@ import { config } from "../config.js";
 
 // ── xAI response types ───────────────────────────
 
-interface XaiResponseItem {
+interface XaiOutputItem {
   type: string;
   id?: string;
-  text?: string;
-  // web_search result items
-  results?: Array<{
-    title: string;
-    url: string;
-    snippet: string;
+  status?: string;
+  action?: { type: string; query?: string; url?: string };
+  content?: Array<{
+    type: string;
+    text: string;
+    annotations?: Array<{ type: string; url: string; title?: string }>;
   }>;
-  // output_text
-  content?: Array<{ type: string; text: string }>;
 }
 
 interface XaiResponse {
   id: string;
-  output: XaiResponseItem[];
+  output: XaiOutputItem[];
   usage?: {
     input_tokens: number;
     output_tokens: number;
+    total_tokens: number;
+    cost_in_usd_ticks?: number;
   };
 }
 
@@ -54,17 +54,14 @@ export async function execute(args: {
   }
 
   try {
-    const systemPrompt = `You are a search assistant. Search X (Twitter) for the query and return results as JSON array.
-Each item: {"author": "...", "text": "...", "url": "...", "date": "...", "engagement": "..."}
-Return up to ${per_page} results. Only return the JSON array, no other text.`;
-
-    const userPrompt = `Search X/Twitter for: "${query}" (last ${recency}). Return the ${per_page} most relevant posts as JSON.`;
+    const userPrompt = `Use web search to find recent posts on X (twitter.com/x.com) about: "${query}"
+Return ${per_page} results as a JSON array with fields: author, text, url, date.`;
 
     const body = {
-      model: "grok-4.1-fast",
-      tools: [{ type: "web_search", search_parameters: { recency_filter: recency } }],
+      model: "grok-4-1-fast-non-reasoning",
+      tool_choice: "required",
+      tools: [{ type: "web_search" }],
       input: [
-        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     };
@@ -76,53 +73,61 @@ Return up to ${per_page} results. Only return the JSON array, no other text.`;
         Authorization: `Bearer ${config.XAI_API_KEY}`,
       },
       body: JSON.stringify(body),
-      timeoutMs: 30_000, // LLM calls need more time
+      timeoutMs: 45_000,
     });
 
-    // Extract web search results and output text
-    const webResults: Array<{ title: string; url: string; snippet: string }> = [];
+    // Extract output text from message items
     let outputText = "";
+    const citedUrls: Array<{ url: string; title?: string }> = [];
 
     for (const item of res.output) {
-      if (item.type === "web_search_call") {
-        // The search call itself
-      } else if (item.type === "web_search_result" && item.results) {
-        webResults.push(...item.results);
-      } else if (item.type === "message" && item.content) {
+      if (item.type === "message" && item.content) {
         for (const c of item.content) {
-          if (c.type === "output_text") outputText += c.text;
+          if (c.type === "output_text") {
+            outputText += c.text;
+            if (c.annotations) {
+              for (const a of c.annotations) {
+                if (a.type === "url_citation") {
+                  citedUrls.push({ url: a.url, title: a.title });
+                }
+              }
+            }
+          }
         }
       }
     }
 
-    // Try to parse the LLM's structured output, fall back to web search results
+    // Parse LLM's JSON output
     let posts: unknown[] = [];
     try {
-      const jsonMatch = outputText.match(/\[[\s\S]*\]/);
+      const jsonMatch = outputText.match(/\[[\s\S]*?\](?=\s*(\[|$))/);
       if (jsonMatch) {
         posts = JSON.parse(jsonMatch[0]);
       }
     } catch {
-      // JSON parse failed — will fall through to webResults fallback below
+      // JSON parse failed
     }
 
-    // Fallback: if LLM didn't produce usable JSON, use raw web search results
-    if (posts.length === 0 && webResults.length > 0) {
-      posts = webResults.map((r) => ({
-        title: r.title,
-        url: r.url,
-        snippet: r.snippet,
+    // Fallback: if no parseable JSON, build results from URL citations
+    if (posts.length === 0 && citedUrls.length > 0) {
+      posts = citedUrls.map((c) => ({
+        url: c.url,
+        title: c.title ?? "",
+        source: "url_citation",
       }));
     }
 
-    // Cost estimate based on token usage
+    // Cost from xAI usage (cost_in_usd_ticks = USD * 10^9)
     const usage = res.usage;
     const cost = usage
       ? {
-          usd: (usage.input_tokens * 0.3 + usage.output_tokens * 0.5) / 1_000_000,
+          usd: usage.cost_in_usd_ticks
+            ? usage.cost_in_usd_ticks / 1_000_000_000
+            : (usage.input_tokens * 0.3 + usage.output_tokens * 0.5) / 1_000_000,
           breakdown: {
             input_tokens: usage.input_tokens,
             output_tokens: usage.output_tokens,
+            total_tokens: usage.total_tokens,
           },
         }
       : undefined;
@@ -138,7 +143,7 @@ Return up to ${per_page} results. Only return the JSON array, no other text.`;
 export function register(server: McpServer): void {
   server.registerTool("x_search", {
     description:
-      "Search X (Twitter) for posts, discussions, and trends using xAI's Grok API with web search. Requires XAI_API_KEY. Cost: ~$0.005/call.",
+      "Search X (Twitter) for posts, discussions, and trends using xAI's Grok API with web search. Requires XAI_API_KEY. Cost: ~$0.003/call.",
     inputSchema: {
       query: z.string().describe("Search query for X/Twitter"),
       recency: z
