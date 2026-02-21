@@ -193,16 +193,16 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive) |
 | `GET /openapi.json` | Free | OpenAPI 3.0 spec |
 
-### 棚置き状況（2026-02-21）
+### 棚置き状況（2026-02-21 15:16 更新）
 
 | プラットフォーム | 状態 |
 |----------------|------|
-| x402scan | 10 EP 登録済み |
-| ClawMart | 8 EP 提出済み (#398-405) |
-| awesome-x402 | PR #38 提出済み |
-| Bazaar (CDP) | 8 EP 登録済み（セルフペイ完了、payTo=main） |
-| x402 Index | Tally フォーム提出待ち（ユーザー作業） |
-| RelAI | ダッシュボード登録待ち（ユーザー作業） |
+| x402scan | 10 EP 登録済み（discovery 自動更新で新価格反映済み） |
+| ClawMart | 10 EP 提出済み (#398-407)。/scout/x, /report/full は新価格で登録 |
+| awesome-x402 | PR #38 提出済み（価格 $0.001–$0.25 に更新、force push済み） |
+| Bazaar (CDP) | 8 EP 登録済み（安い EP のみ。/scout/x, /report/full は未登録） |
+| x402 Index | 提出済み（ユーザー完了） |
+| RelAI | `/openapi.json` 追加済み → 再登録待ち（ユーザー作業） |
 | Apiosk | ダッシュボード登録待ち（ユーザー作業） |
 
 ### サービス管理
@@ -227,6 +227,26 @@ npm run build && systemctl --user restart x402-scout
 - DEV.to / Hashnode (REST API)
 - ArXiv (search API)
 - Stack Overflow (API)
+
+### 価格設定と xAI コスト監視
+
+**価格は env 変数で即時変更可能**（コード変更・ビルド不要）:
+
+```bash
+# ~/etc/x402/scout.env または .env に追加
+PRICE_X=$0.20         # /scout/x の価格
+PRICE_XFULL=$0.25     # /scout/report/full の価格
+PRICE_LOW=$0.001      # その他の価格
+XAI_COST_PER_CALL=0.08  # xAI 平均コスト（実測ベースライン）
+```
+
+変更後: `systemctl --user restart x402-scout`
+
+**コスト監視**: `/health` エンドポイントに `xai_cost_health` セクションあり:
+- `avg_cost_per_call`: xAI API の実測平均コスト
+- `margin_pct`: 現在のマージン率（%）
+- `alert`: マージンが 40% 未満で `true`（値上げ対応が必要）
+- x402-monitor weekly が自動チェック → Discord アラート
 
 ---
 
