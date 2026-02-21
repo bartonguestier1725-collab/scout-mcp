@@ -65,6 +65,7 @@ async function main() {
 
   const result = await tool(args);
   console.log(JSON.stringify(result, null, 2));
+  process.exit(0);
 }
 
 main().catch((err) => {
