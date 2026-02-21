@@ -48,6 +48,12 @@ export const config = {
   CDP_API_KEY_ID: process.env.CDP_API_KEY_ID ?? "",
   CDP_API_KEY_SECRET: process.env.CDP_API_KEY_SECRET ?? "",
 
+  // Pricing (env-configurable for instant adjustment without code change)
+  PRICE_LOW: process.env.PRICE_LOW ?? "$0.001",
+  PRICE_X: process.env.PRICE_X ?? "$0.20",
+  PRICE_XFULL: process.env.PRICE_XFULL ?? "$0.25",
+  XAI_COST_PER_CALL: Number(process.env.XAI_COST_PER_CALL) || 0.08,
+
   // Timeouts & limits
   TIMEOUT_MS: 10_000,
   DEFAULT_PER_PAGE: 10,

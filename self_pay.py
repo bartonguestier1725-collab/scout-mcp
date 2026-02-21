@@ -54,7 +54,7 @@ if _payer.lower() == EVM_ADDRESS.lower():
     sys.exit(1)
 
 # Only self-pay the cheap endpoints ($0.001 each)
-# X ($0.05) and report/full ($0.05) are skipped to save cost
+# X ($0.20) and report/full ($0.25) are skipped to save cost
 ENDPOINTS = [
     "/scout/hn?q=x402",
     "/scout/npm?q=mcp",

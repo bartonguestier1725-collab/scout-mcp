@@ -187,10 +187,11 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | `GET /scout/github/repo?owner=&repo=` | $0.001 | github_repo_info |
 | `GET /scout/pypi?q=` | $0.001 | pypi_search |
 | `GET /scout/ph?q=` | $0.001 | producthunt_search |
-| `GET /scout/x?q=` | $0.05 | x_search |
+| `GET /scout/x?q=` | $0.20 | x_search |
 | `GET /scout/x402?q=` | $0.001 | bazaar_search |
 | `GET /scout/report?q=` | $0.001 | scout_report (balanced) |
-| `GET /scout/report/full?q=` | $0.05 | scout_report (comprehensive) |
+| `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive) |
+| `GET /openapi.json` | Free | OpenAPI 3.0 spec |
 
 ### 棚置き状況（2026-02-21）
 

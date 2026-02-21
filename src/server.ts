@@ -42,7 +42,58 @@ const stats = {
   errors_total: 0,
   x_calls: 0,
   x_cost_estimate: 0,
+  // Per-call cost tracking from xAI API response (for price-change detection)
+  x_cost_per_call_sum: 0,
+  x_cost_per_call_recent: [] as number[], // last 20 calls for rolling average
 };
+
+// ── Helper: xAI cost tracking ───────────────────────────────
+
+import type { ToolResult } from "./types.js";
+
+const ROLLING_WINDOW = 20;
+
+function trackXCost(result: ToolResult): void {
+  const cost = result.cost_estimate?.usd ?? config.XAI_COST_PER_CALL;
+  stats.x_cost_estimate += cost;
+  stats.x_cost_per_call_sum += cost;
+  stats.x_cost_per_call_recent.push(cost);
+  if (stats.x_cost_per_call_recent.length > ROLLING_WINDOW) {
+    stats.x_cost_per_call_recent.shift();
+  }
+}
+
+function trackXCostFromReport(result: ToolResult): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = result.data as any;
+  const xResult = data?.results?.x;
+  if (xResult?.cost_estimate?.usd) {
+    trackXCost(xResult as ToolResult);
+  } else {
+    // Fallback: use configured average
+    stats.x_cost_estimate += config.XAI_COST_PER_CALL;
+    stats.x_cost_per_call_sum += config.XAI_COST_PER_CALL;
+  }
+}
+
+function getXCostHealth(): {
+  avg_cost_per_call: number;
+  configured_price: string;
+  margin_pct: number;
+  alert: boolean;
+} {
+  const avg = stats.x_calls > 0
+    ? stats.x_cost_per_call_sum / stats.x_calls
+    : config.XAI_COST_PER_CALL;
+  const priceNum = parseFloat(config.PRICE_X.replace("$", ""));
+  const margin = priceNum > 0 ? ((priceNum - avg) / priceNum) * 100 : 0;
+  return {
+    avg_cost_per_call: Math.round(avg * 10000) / 10000,
+    configured_price: config.PRICE_X,
+    margin_pct: Math.round(margin),
+    alert: margin < 40, // Alert when margin drops below 40%
+  };
+}
 
 // ── Helper: query param extraction ──────────────────────────
 
@@ -88,9 +139,10 @@ async function startServer() {
   resourceServer.register(network, new ExactEvmScheme());
   resourceServer.registerExtension(bazaarResourceServerExtension);
 
-  // --- Payment options ---
-  const PRICE_LOW = "$0.001";
-  const PRICE_HIGH = "$0.05";
+  // --- Payment options (env-configurable via config.ts) ---
+  const PRICE_LOW = config.PRICE_LOW;
+  const PRICE_X = config.PRICE_X;
+  const PRICE_XFULL = config.PRICE_XFULL;
 
   const makeOption = (price: string) => ({
     scheme: "exact" as const,
@@ -147,8 +199,8 @@ async function startServer() {
       { input: { type: "http", queryParams: { q: "ai-agents" } }, output: { type: "json" } },
     ),
     "GET /scout/x": makeRoute(
-      "Search X/Twitter via xAI Grok with web search (~$0.005 upstream cost)",
-      PRICE_HIGH,
+      "Search X/Twitter via xAI Grok with web search (~$0.08 upstream cost)",
+      PRICE_X,
       {
         input: { type: "http", queryParams: { q: "x402 protocol" } },
         output: { type: "json" },
@@ -169,7 +221,7 @@ async function startServer() {
     ),
     "GET /scout/report/full": makeRoute(
       "Comprehensive intelligence report across all 6 sources including X and Product Hunt",
-      PRICE_HIGH,
+      PRICE_XFULL,
       { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
     ),
   };
@@ -197,6 +249,7 @@ async function startServer() {
     const h = Math.floor((uptime % 86400) / 3600);
     const m = Math.floor((uptime % 3600) / 60);
 
+    const costHealth = getXCostHealth();
     res.json({
       status: "ok",
       service: "scout-mcp",
@@ -212,6 +265,17 @@ async function startServer() {
             .sort(([, a], [, b]) => b - a)
             .slice(0, 10),
         ),
+      },
+      pricing: {
+        x_search: config.PRICE_X,
+        report_full: config.PRICE_XFULL,
+        low: config.PRICE_LOW,
+      },
+      xai_cost_health: {
+        ...costHealth,
+        ...(costHealth.alert
+          ? { warning: "xAI cost margin below 40%. Check dashboard and consider price adjustment." }
+          : {}),
       },
     });
   });
@@ -235,14 +299,151 @@ async function startServer() {
         "- `GET /scout/github/repo?owner=<o>&repo=<r>` \u2014 GitHub repo detail ($0.001)\n" +
         "- `GET /scout/pypi?q=<query>` \u2014 PyPI packages ($0.001)\n" +
         "- `GET /scout/ph?q=<query>` \u2014 Product Hunt ($0.001)\n" +
-        "- `GET /scout/x?q=<query>` \u2014 X/Twitter ($0.05)\n" +
+        "- `GET /scout/x?q=<query>` \u2014 X/Twitter ($0.20)\n" +
         "- `GET /scout/x402?q=<query>` \u2014 x402 Bazaar search ($0.001)\n" +
         "- `GET /scout/report?q=<query>` \u2014 Balanced report ($0.001)\n" +
-        "- `GET /scout/report/full?q=<query>` \u2014 Full report ($0.05)\n\n" +
+        "- `GET /scout/report/full?q=<query>` \u2014 Full report ($0.25)\n\n" +
         "## Pricing\n" +
-        "Free sources: $0.001/request. X-inclusive: $0.05/request. USDC on Base.\n\n" +
+        "Free sources: $0.001/request. X search: $0.20/request. Full report: $0.25/request. USDC on Base.\n\n" +
         "## Contact\n" +
         "GitHub: https://github.com/bartonguestier1725-collab/scout-mcp",
+    });
+  });
+
+  app.get("/openapi.json", (req: Request, res: Response) => {
+    const proto = req.get("x-forwarded-proto") || req.protocol;
+    const origin = `${proto}://${req.get("host")}`;
+    res.json({
+      openapi: "3.0.3",
+      info: {
+        title: "Scout MCP — Multi-source Intelligence API",
+        description:
+          "Search across Hacker News, GitHub, npm, PyPI, X/Twitter, Product Hunt, and x402 Bazaar. " +
+          "Paid via x402 micropayments (USDC on Base).",
+        version: "1.0.0",
+        contact: { url: "https://github.com/bartonguestier1725-collab/scout-mcp" },
+      },
+      servers: [{ url: origin }],
+      paths: {
+        "/scout/hn": {
+          get: {
+            summary: "Search Hacker News",
+            operationId: "searchHN",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Search query" },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "date"] } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
+              { name: "tag", in: "query", schema: { type: "string", enum: ["story", "comment", "poll", "show_hn", "ask_hn"] } },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+          },
+        },
+        "/scout/npm": {
+          get: {
+            summary: "Search npm registry",
+            operationId: "searchNpm",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+          },
+        },
+        "/scout/github": {
+          get: {
+            summary: "Search GitHub repositories",
+            operationId: "searchGitHub",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["stars", "forks", "updated", "best-match"] } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
+              { name: "language", in: "query", schema: { type: "string" } },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+          },
+        },
+        "/scout/github/repo": {
+          get: {
+            summary: "Get GitHub repository details",
+            operationId: "getGitHubRepo",
+            parameters: [
+              { name: "owner", in: "query", required: true, schema: { type: "string" } },
+              { name: "repo", in: "query", required: true, schema: { type: "string" } },
+              { name: "include_contributors", in: "query", schema: { type: "boolean" } },
+              { name: "include_releases", in: "query", schema: { type: "boolean" } },
+            ],
+            responses: { "200": { description: "Repository details" }, "402": { description: "Payment required ($0.001)" } },
+          },
+        },
+        "/scout/pypi": {
+          get: {
+            summary: "Search PyPI packages",
+            operationId: "searchPyPI",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+          },
+        },
+        "/scout/ph": {
+          get: {
+            summary: "Search Product Hunt",
+            operationId: "searchProductHunt",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+              { name: "order", in: "query", schema: { type: "string", enum: ["VOTES", "NEWEST"] } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+          },
+        },
+        "/scout/x": {
+          get: {
+            summary: "Search X/Twitter via xAI Grok",
+            operationId: "searchX",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+              { name: "recency", in: "query", schema: { type: "string", enum: ["day", "week", "month"] } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.20)" } },
+          },
+        },
+        "/scout/x402": {
+          get: {
+            summary: "Search x402 Bazaar",
+            operationId: "searchBazaar",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+          },
+        },
+        "/scout/report": {
+          get: {
+            summary: "Balanced intelligence report (HN, GitHub, npm, PyPI)",
+            operationId: "balancedReport",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+            ],
+            responses: { "200": { description: "Multi-source report" }, "402": { description: "Payment required ($0.001)" } },
+          },
+        },
+        "/scout/report/full": {
+          get: {
+            summary: "Comprehensive report (all 6 sources including X)",
+            operationId: "fullReport",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string" } },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+            ],
+            responses: { "200": { description: "Multi-source report" }, "402": { description: "Payment required ($0.25)" } },
+          },
+        },
+      },
     });
   });
 
@@ -334,12 +535,12 @@ async function startServer() {
   app.get("/scout/x", async (req: Request, res: Response) => {
     try {
       stats.x_calls++;
-      stats.x_cost_estimate += 0.005;
       const result = await xSearch({
         query: q(req),
         recency: (req.query.recency as "day" | "week" | "month") || undefined,
         per_page: perPage(req, MAX_PER_PAGE_COSTLY),
       });
+      trackXCost(result);
       res.json(result);
     } catch (err) {
       stats.errors_total++;
@@ -373,12 +574,13 @@ async function startServer() {
   app.get("/scout/report/full", async (req: Request, res: Response) => {
     try {
       stats.x_calls++;
-      stats.x_cost_estimate += 0.005;
       const result = await scoutReport({
         query: q(req),
         focus: "comprehensive",
         per_page: perPage(req, MAX_PER_PAGE_COSTLY),
       });
+      // scout_report wraps x results — extract cost from nested data if available
+      trackXCostFromReport(result);
       res.json(result);
     } catch (err) {
       stats.errors_total++;
