@@ -18,6 +18,7 @@ import { register as registerXSearch } from "./tools/x-search.js";
 import { register as registerPypiSearch } from "./tools/pypi-search.js";
 import { register as registerProducthuntSearch } from "./tools/producthunt-search.js";
 import { register as registerScoutReport } from "./tools/scout-report.js";
+import { register as registerBazaarSearch } from "./tools/bazaar-search.js";
 
 const server = new McpServer({
   name: "scout-mcp",
@@ -33,6 +34,7 @@ registerXSearch(server);
 registerPypiSearch(server);
 registerProducthuntSearch(server);
 registerScoutReport(server);
+registerBazaarSearch(server);
 
 async function main() {
   const transport = new StdioServerTransport();

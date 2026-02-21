@@ -21,6 +21,7 @@ import { execute as xSearch } from "./tools/x-search.js";
 import { execute as pypiSearch } from "./tools/pypi-search.js";
 import { execute as phSearch } from "./tools/producthunt-search.js";
 import { execute as scoutReport } from "./tools/scout-report.js";
+import { execute as bazaarSearch } from "./tools/bazaar-search.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: Record<string, (args: any) => Promise<unknown>> = {
@@ -32,6 +33,7 @@ const TOOLS: Record<string, (args: any) => Promise<unknown>> = {
   pypi_search: pypiSearch,
   producthunt_search: phSearch,
   scout_report: scoutReport,
+  bazaar_search: bazaarSearch,
 };
 
 async function main() {

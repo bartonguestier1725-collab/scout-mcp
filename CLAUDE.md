@@ -3,19 +3,19 @@
 ## これは何？
 
 Claude Code からツール呼び出しで使える **情報偵察（スカウト）MCP サーバー**。
-X(Twitter), GitHub, Hacker News, Product Hunt, npm, PyPI を横断検索し、
+X(Twitter), GitHub, Hacker News, Product Hunt, npm, PyPI, x402 Bazaar を横断検索し、
 技術トレンド・競合・マーケット情報を構造化 JSON で返す。
 
-将来的に x402 エンドポイント (`https://scout.hugen.tokyo`) として外部公開する可能性あり。
+**x402 HTTP API としても公開中**: `https://scout.hugen.tokyo`（USDC on Base）
 
 ---
 
 ## 設計思想
 
-1. **Claude Code のローカル MCP として動く** — stdio トランスポート
-2. **最小依存** — `@modelcontextprotocol/sdk`, `zod`, `dotenv` のみ
-3. **個別ツール + 合成レポート** — 8 ツールが独立動作し、`scout_report` が並列合成する
-4. **将来 x402 化可能** — ステートレス設計、`cost_estimate` フィールド内蔵
+1. **デュアルモード** — MCP (stdio) + HTTP (Express + x402) の2モードで同じツール群を共有
+2. **最小依存** — `@modelcontextprotocol/sdk`, `zod`, `dotenv`, `express`, `@x402/*`
+3. **個別ツール + 合成レポート** — 9 ツールが独立動作し、`scout_report` が並列合成する
+4. **x402 マイクロペイメント** — $0.001/req (無料ソース) 〜 $0.05/req (X含む)
 5. **1 ソース失敗 ≠ 全滅** — `Promise.allSettled` で部分的成功を許容
 
 ---
@@ -26,12 +26,14 @@ X(Twitter), GitHub, Hacker News, Product Hunt, npm, PyPI を横断検索し、
 scout-mcp/
 ├── package.json
 ├── tsconfig.json
-├── .env                   # API キー（git 管理外）
+├── .env                   # API キー + x402 設定（git 管理外）
 ├── .env.example           # テンプレート
 ├── .gitignore
 ├── CLAUDE.md              # ← このファイル
+├── self_pay.py            # Bazaar セルフペイスクリプト
 ├── src/
 │   ├── index.ts           # MCP サーバーエントリ (StdioServerTransport)
+│   ├── server.ts          # HTTP サーバー (Express + x402 ミドルウェア)
 │   ├── cli.ts             # テスト CLI (node build/cli.js <tool> '<json>')
 │   ├── config.ts          # 環境変数・定数・デフォルト値
 │   ├── fetch-utils.ts     # safeFetch (timeout/abort/error handling)
@@ -44,6 +46,7 @@ scout-mcp/
 │       ├── github-repo-info.ts     # GitHub リポ詳細
 │       ├── pypi-search.ts          # PyPI パッケージ検索
 │       ├── producthunt-search.ts   # Product Hunt 検索 (GraphQL)
+│       ├── bazaar-search.ts        # x402 Bazaar 検索 (CDP Discovery)
 │       └── scout-report.ts         # 複合レポート (並列実行)
 └── build/                 # tsc 出力（git 管理外）
 ```
@@ -56,7 +59,9 @@ scout-mcp/
 - **Language**: TypeScript (ES2022, Node16 module resolution)
 - **MCP SDK**: `@modelcontextprotocol/sdk` v1.26
 - **Schema**: zod v4
-- **Transport**: stdio（Claude Code ローカル接続）
+- **Transport**: stdio（MCP モード） / HTTP（x402 モード）
+- **x402**: `@x402/express`, `@x402/core`, `@x402/evm`, `@x402/extensions`
+- **HTTP**: Express 5
 
 ---
 
@@ -71,7 +76,8 @@ scout-mcp/
 | 5 | `github_repo_info` | GitHub REST API | GITHUB_TOKEN 設定済 | 無料 | ビルド確認済 |
 | 6 | `pypi_search` | PyPI JSON API | 不要 | 無料 | 動作確認済 |
 | 7 | `producthunt_search` | PH GraphQL API | PH_CLIENT_* 必須 | 無料 | 動作確認済 |
-| 8 | `scout_report` | 上記を並列合成 | 各ソースに依存 | X 使用時課金 | 動作確認済 |
+| 8 | `bazaar_search` | CDP Discovery API | 不要 | 無料 | 動作確認済 |
+| 9 | `scout_report` | 上記を並列合成 | 各ソースに依存 | X 使用時課金 | 動作確認済 |
 
 ### scout_report の focus プリセット
 
@@ -154,14 +160,66 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 
 ---
 
-## 将来計画（今は実装しない）
+## x402 HTTP API（本番稼働中）
 
-### x402 化
-- `https://scout.hugen.tokyo` で外部公開
-- `x402ctl add scout 4023` で systemd 登録
-- `config.yml` に ingress 追加
-- 価格設定の参考: `cost_estimate` フィールドに xAI コストが含まれる
-- FastAPI ラッパー + x402 middleware or TypeScript x402 SDK
+### デプロイ情報
+
+| 項目 | 値 |
+|------|----|
+| URL | `https://scout.hugen.tokyo` |
+| ポート | 4023 |
+| systemd | `x402-scout.service`（カスタム、テンプレート不使用） |
+| env | `~/etc/x402/scout.env` |
+| トンネル | `~/.cloudflared/config.yml` の ingress |
+| 受取アドレス | `0x29322Ea7EcB34aA6164cb2ddeB9CE650902E4f60` |
+| ネットワーク | `eip155:8453`（Base Mainnet） |
+| Facilitator | CDP（JWT 認証、jose ライブラリで生成） |
+
+### HTTP エンドポイント
+
+| Route | 価格 | ツール |
+|-------|------|--------|
+| `GET /health` | Free | — |
+| `GET /.well-known/x402` | Free | — |
+| `GET /scout/hn?q=` | $0.001 | hackernews_search |
+| `GET /scout/npm?q=` | $0.001 | npm_search |
+| `GET /scout/github?q=` | $0.001 | github_search |
+| `GET /scout/github/repo?owner=&repo=` | $0.001 | github_repo_info |
+| `GET /scout/pypi?q=` | $0.001 | pypi_search |
+| `GET /scout/ph?q=` | $0.001 | producthunt_search |
+| `GET /scout/x?q=` | $0.05 | x_search |
+| `GET /scout/x402?q=` | $0.001 | bazaar_search |
+| `GET /scout/report?q=` | $0.001 | scout_report (balanced) |
+| `GET /scout/report/full?q=` | $0.05 | scout_report (comprehensive) |
+
+### 棚置き状況（2026-02-21）
+
+| プラットフォーム | 状態 |
+|----------------|------|
+| x402scan | 10 EP 登録済み |
+| ClawMart | 8 EP 提出済み (#398-405) |
+| awesome-x402 | PR #38 提出済み |
+| Bazaar (CDP) | セルフペイ待ち |
+| x402 Index | Tally フォーム提出待ち（ユーザー作業） |
+| RelAI | ダッシュボード登録待ち（ユーザー作業） |
+| Apiosk | ダッシュボード登録待ち（ユーザー作業） |
+
+### サービス管理
+
+```bash
+# 起動・停止
+systemctl --user start x402-scout
+systemctl --user stop x402-scout
+systemctl --user restart x402-scout
+
+# ログ
+journalctl --user -u x402-scout -f
+
+# ビルド + 再起動
+npm run build && systemctl --user restart x402-scout
+```
+
+### 将来計画
 
 ### 追加ソース候補
 - Reddit (Pushshift API or OAuth)
@@ -190,3 +248,10 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
   - PyPI: 当初 HTML スクレイピング方式だったが Cloudflare で遮断されたため JSON API + 名前候補方式に変更
   - scout_report comprehensive モードで 6/6 ソース成功確認（15件, ~19秒）
   - 外部レビュー指摘 5 件中 2 件（x_search fallback バグ、PH GraphQL エラー処理）を修正
+- **2026-02-21**: x402 化。Express HTTP サーバー + x402 ペイメントミドルウェア追加
+  - 10 有料エンドポイント（8 × $0.001 + 2 × $0.05）
+  - bazaar_search 新規追加（CDP Discovery API クロール + テキスト検索）
+  - CDP facilitator JWT 認証（jose ライブラリで ES256/EdDSA 対応）
+  - systemd + Cloudflare Named Tunnel でデプロイ
+  - x402scan 10EP、ClawMart 8EP、awesome-x402 PR #38 提出
+  - 古いプロセス残留によるポート競合を発見・修正（trust proxy 問題の真の原因）

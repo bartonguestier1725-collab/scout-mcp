@@ -39,6 +39,15 @@ export const config = {
   PH_CLIENT_ID: process.env.PH_CLIENT_ID ?? "",
   PH_CLIENT_SECRET: process.env.PH_CLIENT_SECRET ?? "",
 
+  // x402 payment settings
+  EVM_ADDRESS: process.env.EVM_ADDRESS ?? "",
+  NETWORK: process.env.NETWORK ?? "eip155:8453",
+  X402_PORT: Number(process.env.X402_PORT) || 4023,
+  FACILITATOR_URL:
+    process.env.FACILITATOR_URL ?? "https://x402.org/facilitator",
+  CDP_API_KEY_ID: process.env.CDP_API_KEY_ID ?? "",
+  CDP_API_KEY_SECRET: process.env.CDP_API_KEY_SECRET ?? "",
+
   // Timeouts & limits
   TIMEOUT_MS: 10_000,
   DEFAULT_PER_PAGE: 10,
