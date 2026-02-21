@@ -173,7 +173,7 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | トンネル | `~/.cloudflared/config.yml` の ingress |
 | 受取アドレス | `0x29322Ea7EcB34aA6164cb2ddeB9CE650902E4f60` |
 | ネットワーク | `eip155:8453`（Base Mainnet） |
-| Facilitator | CDP（JWT 認証、jose ライブラリで生成） |
+| Facilitator | CDP（@coinbase/x402 公式ヘルパーで JWT 認証） |
 
 ### HTTP エンドポイント
 
@@ -199,7 +199,7 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | x402scan | 10 EP 登録済み |
 | ClawMart | 8 EP 提出済み (#398-405) |
 | awesome-x402 | PR #38 提出済み |
-| Bazaar (CDP) | セルフペイ待ち |
+| Bazaar (CDP) | 8 EP 登録済み（セルフペイ完了、payTo=main） |
 | x402 Index | Tally フォーム提出待ち（ユーザー作業） |
 | RelAI | ダッシュボード登録待ち（ユーザー作業） |
 | Apiosk | ダッシュボード登録待ち（ユーザー作業） |
@@ -251,7 +251,8 @@ npm run build && systemctl --user restart x402-scout
 - **2026-02-21**: x402 化。Express HTTP サーバー + x402 ペイメントミドルウェア追加
   - 10 有料エンドポイント（8 × $0.001 + 2 × $0.05）
   - bazaar_search 新規追加（CDP Discovery API クロール + テキスト検索）
-  - CDP facilitator JWT 認証（jose ライブラリで ES256/EdDSA 対応）
+  - CDP facilitator JWT 認証（@coinbase/x402 公式ヘルパー使用）
+  - Bazaar セルフペイ完了（2パス temp wallet 方式、8EP × 2 = 16TX）
   - systemd + Cloudflare Named Tunnel でデプロイ
   - x402scan 10EP、ClawMart 8EP、awesome-x402 PR #38 提出
   - 古いプロセス残留によるポート競合を発見・修正（trust proxy 問題の真の原因）
