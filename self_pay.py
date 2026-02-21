@@ -39,6 +39,20 @@ if not PRIVATE_KEY:
     print("  export EVM_PRIVATE_KEY='0x...'")
     sys.exit(1)
 
+# --- Safety: from != to check (地雷11) ---
+# CDP facilitator rejects EIP-3009 where from == to with unhelpful
+# "invalid_payload" error. This guard prevents hours of debugging.
+EVM_ADDRESS = os.getenv("EVM_ADDRESS", "0x29322Ea7EcB34aA6164cb2ddeB9CE650902E4f60")
+_payer = Account.from_key(PRIVATE_KEY).address
+if _payer.lower() == EVM_ADDRESS.lower():
+    print("FATAL: from == to detected!")
+    print(f"  Payer (from): {_payer}")
+    print(f"  Receiver (to): {EVM_ADDRESS}")
+    print()
+    print("CDP facilitator rejects self-pay where from == to.")
+    print("Use a DIFFERENT wallet. See playbook 地雷11 for 2-pass procedure.")
+    sys.exit(1)
+
 # Only self-pay the cheap endpoints ($0.001 each)
 # X ($0.05) and report/full ($0.05) are skipped to save cost
 ENDPOINTS = [
