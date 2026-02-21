@@ -39,6 +39,7 @@ const stats = {
   started_at: new Date().toISOString(),
   requests_total: 0,
   requests_by_endpoint: {} as Record<string, number>,
+  requests_by_channel: { x402: 0, rapidapi: 0, free: 0 } as Record<string, number>,
   errors_total: 0,
   x_calls: 0,
   x_cost_estimate: 0,
@@ -230,14 +231,30 @@ async function startServer() {
   const app = express();
   app.set("trust proxy", 1); // Cloudflare Tunnel terminates SSL
 
-  // x402 payment middleware (must be before route handlers)
-  app.use(paymentMiddleware(routes, resourceServer));
+  // x402 payment middleware + RapidAPI bypass
+  const x402Mw = paymentMiddleware(routes, resourceServer);
+  app.use((req: Request, res: Response, next) => {
+    const secret = req.headers["x-rapidapi-proxy-secret"];
+    if (
+      config.RAPIDAPI_PROXY_SECRET &&
+      typeof secret === "string" &&
+      secret.length > 0 &&
+      secret === config.RAPIDAPI_PROXY_SECRET
+    ) {
+      (req as any)._channel = "rapidapi";
+      return next();
+    }
+    return x402Mw(req, res, next);
+  });
 
   // Request counter (runs for all requests including free ones)
   app.use((req: Request, _res: Response, next) => {
     stats.requests_total++;
     const key = `${req.method} ${req.path}`;
     stats.requests_by_endpoint[key] = (stats.requests_by_endpoint[key] || 0) + 1;
+    const ch = (req as any)._channel
+      || (key.startsWith("GET /health") || key.startsWith("GET /.well-known") || key.startsWith("GET /openapi") ? "free" : "x402");
+    stats.requests_by_channel[ch] = (stats.requests_by_channel[ch] || 0) + 1;
     next();
   });
 
@@ -257,6 +274,7 @@ async function startServer() {
       uptime: `${d}d ${h}h ${m}m`,
       stats: {
         requests_total: stats.requests_total,
+        requests_by_channel: stats.requests_by_channel,
         x_calls: stats.x_calls,
         x_cost_estimate: `$${stats.x_cost_estimate.toFixed(3)}`,
         errors_total: stats.errors_total,

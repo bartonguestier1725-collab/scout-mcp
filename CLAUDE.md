@@ -193,17 +193,17 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive) |
 | `GET /openapi.json` | Free | OpenAPI 3.0 spec |
 
-### 棚置き状況（2026-02-21 15:16 更新）
+### 棚置き状況（2026-02-21 18:30 全棚完了）
 
 | プラットフォーム | 状態 |
 |----------------|------|
-| x402scan | 10 EP 登録済み（discovery 自動更新で新価格反映済み） |
-| ClawMart | 10 EP 提出済み (#398-407)。/scout/x, /report/full は新価格で登録 |
-| awesome-x402 | PR #38 提出済み（価格 $0.001–$0.25 に更新、force push済み） |
-| Bazaar (CDP) | 8 EP 登録済み（安い EP のみ。/scout/x, /report/full は未登録） |
-| x402 Index | 提出済み（ユーザー完了） |
-| RelAI | `/openapi.json` 追加済み → 再登録待ち（ユーザー作業） |
-| Apiosk | ダッシュボード登録待ち（ユーザー作業） |
+| x402 Bazaar | ✅ 10 EP 全登録済み（全EP実支払テスト30/30成功、cron週次自動更新） |
+| x402scan | ✅ 10 EP（discovery 自動で価格反映） |
+| ClawMart | ✅ 10 EP (#398-407) |
+| awesome-x402 | ✅ PR #33 Merged (gotobi+weather), PR #38 Merged (scout) |
+| x402 Index | ✅ 提出済み |
+| RelAI | ✅ `/openapi.json` 登録済み |
+| Apiosk | ✅ 登録済み |
 
 ### サービス管理
 
@@ -269,11 +269,12 @@ XAI_COST_PER_CALL=0.08  # xAI 平均コスト（実測ベースライン）
   - PyPI: 当初 HTML スクレイピング方式だったが Cloudflare で遮断されたため JSON API + 名前候補方式に変更
   - scout_report comprehensive モードで 6/6 ソース成功確認（15件, ~19秒）
   - 外部レビュー指摘 5 件中 2 件（x_search fallback バグ、PH GraphQL エラー処理）を修正
-- **2026-02-21**: x402 化。Express HTTP サーバー + x402 ペイメントミドルウェア追加
-  - 10 有料エンドポイント（8 × $0.001 + 2 × $0.05）
+- **2026-02-21**: x402 化 + 全棚登録完了
+  - 10 有料エンドポイント（8 × $0.001 + $0.20 + $0.25）
   - bazaar_search 新規追加（CDP Discovery API クロール + テキスト検索）
   - CDP facilitator JWT 認証（@coinbase/x402 公式ヘルパー使用）
-  - Bazaar セルフペイ完了（2パス temp wallet 方式、8EP × 2 = 16TX）
+  - 全EP実支払テスト 30/30 成功（$0.20/$0.25 含む。地雷18: httpx timeout 修正で解決）
+  - bazaar-selfpay 全自動化（13EP × 2パス、cron日曜4:00）
   - systemd + Cloudflare Named Tunnel でデプロイ
-  - x402scan 10EP、ClawMart 8EP、awesome-x402 PR #38 提出
+  - 全7棚登録完了: x402scan, ClawMart, awesome-x402 (PR #33, #38 Merged), Bazaar, RelAI, Apiosk, x402 Index
   - 古いプロセス残留によるポート競合を発見・修正（trust proxy 問題の真の原因）

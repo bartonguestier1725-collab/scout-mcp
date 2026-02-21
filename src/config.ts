@@ -54,6 +54,9 @@ export const config = {
   PRICE_XFULL: process.env.PRICE_XFULL ?? "$0.25",
   XAI_COST_PER_CALL: Number(process.env.XAI_COST_PER_CALL) || 0.08,
 
+  // RapidAPI proxy authentication (optional — empty = disabled)
+  RAPIDAPI_PROXY_SECRET: process.env.RAPIDAPI_PROXY_SECRET ?? "",
+
   // Timeouts & limits
   TIMEOUT_MS: 10_000,
   DEFAULT_PER_PAGE: 10,
