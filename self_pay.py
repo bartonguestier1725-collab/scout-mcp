@@ -58,13 +58,6 @@ async def main():
     account = Account.from_key(PRIVATE_KEY)
     register_exact_evm_client(client, EthAccountSigner(account))
 
-    server_address = os.getenv("EVM_ADDRESS", "0x29322Ea7EcB34aA6164cb2ddeB9CE650902E4f60")
-    if account.address.lower() == server_address.lower():
-        print("ERROR: Payer address == server EVM_ADDRESS (same wallet)")
-        print("  CDP facilitator rejects from == to payments.")
-        print("  Use a temp wallet. See playbook 地雷 #11.")
-        sys.exit(1)
-
     print(f"Payer wallet: {account.address}")
     print(f"Target API:   {API_URL}")
     print(f"Endpoints:    {len(ENDPOINTS)} (skip X and report/full to save cost)")

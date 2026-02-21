@@ -14,13 +14,11 @@ import { paymentMiddleware } from "@x402/express";
 import {
   x402ResourceServer,
   HTTPFacilitatorClient,
-  type FacilitatorConfig,
 } from "@x402/core/server";
 import type { Network } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { bazaarResourceServerExtension } from "@x402/extensions";
-import { SignJWT, importPKCS8, importJWK } from "jose";
-import { randomBytes } from "node:crypto";
+import { createFacilitatorConfig } from "@coinbase/x402";
 
 import { config } from "./config.js";
 
@@ -45,81 +43,6 @@ const stats = {
   x_calls: 0,
   x_cost_estimate: 0,
 };
-
-// ── CDP JWT Auth ────────────────────────────────────────────
-
-/**
- * Generate a CDP-compatible JWT for facilitator API authentication.
- * Supports both ES256 (PEM) and EdDSA (Ed25519 base64) key formats.
- */
-async function generateCDPJwt(
-  apiKeyId: string,
-  apiKeySecret: string,
-  method: string,
-  path: string,
-): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  const nonce = randomBytes(16).toString("hex");
-
-  const claims = {
-    sub: apiKeyId,
-    iss: "cdp",
-    uris: [`${method} api.cdp.coinbase.com${path}`],
-  };
-
-  // Try ES256 (PEM) first
-  try {
-    const ecKey = await importPKCS8(apiKeySecret, "ES256");
-    return await new SignJWT(claims)
-      .setProtectedHeader({ alg: "ES256", kid: apiKeyId, typ: "JWT", nonce })
-      .setIssuedAt(now)
-      .setNotBefore(now)
-      .setExpirationTime(now + 120)
-      .sign(ecKey);
-  } catch {
-    // Fall through to Ed25519
-  }
-
-  // Ed25519 (base64-encoded 64 bytes: 32 seed + 32 public)
-  const decoded = Buffer.from(apiKeySecret, "base64");
-  if (decoded.length !== 64) {
-    throw new Error(
-      `Invalid CDP key: expected 64 bytes (Ed25519), got ${decoded.length}`,
-    );
-  }
-  const jwk = {
-    kty: "OKP" as const,
-    crv: "Ed25519" as const,
-    d: decoded.subarray(0, 32).toString("base64url"),
-    x: decoded.subarray(32).toString("base64url"),
-  };
-  const key = await importJWK(jwk, "EdDSA");
-  return await new SignJWT(claims)
-    .setProtectedHeader({ alg: "EdDSA", kid: apiKeyId, typ: "JWT", nonce })
-    .setIssuedAt(now)
-    .setNotBefore(now)
-    .setExpirationTime(now + 120)
-    .sign(key);
-}
-
-/**
- * Build createAuthHeaders function for HTTPFacilitatorClient.
- * Called on every payment verify/settle/supported request — JWTs are always fresh.
- */
-function buildCDPCreateAuthHeaders(apiKeyId: string, apiKeySecret: string) {
-  return async () => {
-    const [verify, settle, supported] = await Promise.all([
-      generateCDPJwt(apiKeyId, apiKeySecret, "POST", "/platform/v2/x402/verify"),
-      generateCDPJwt(apiKeyId, apiKeySecret, "POST", "/platform/v2/x402/settle"),
-      generateCDPJwt(apiKeyId, apiKeySecret, "GET", "/platform/v2/x402/supported"),
-    ]);
-    return {
-      verify: { Authorization: `Bearer ${verify}` },
-      settle: { Authorization: `Bearer ${settle}` },
-      supported: { Authorization: `Bearer ${supported}` },
-    };
-  };
-}
 
 // ── Helper: query param extraction ──────────────────────────
 
@@ -147,20 +70,16 @@ async function startServer() {
   }
 
   // --- Facilitator client ---
-  const facilitatorConfig: FacilitatorConfig =
+  // Use @coinbase/x402 official helper for CDP facilitator auth.
+  // Falls back to env-configured URL if CDP keys are not set.
+  const facilitatorConfig =
     config.CDP_API_KEY_ID && config.CDP_API_KEY_SECRET
-      ? {
-          url: config.FACILITATOR_URL,
-          createAuthHeaders: buildCDPCreateAuthHeaders(
-            config.CDP_API_KEY_ID,
-            config.CDP_API_KEY_SECRET,
-          ),
-        }
+      ? createFacilitatorConfig(config.CDP_API_KEY_ID, config.CDP_API_KEY_SECRET)
       : { url: config.FACILITATOR_URL };
 
   console.error(
-    `[scout-mcp] Facilitator: ${config.FACILITATOR_URL}` +
-      (config.CDP_API_KEY_ID ? " (CDP JWT auth)" : " (no auth)"),
+    `[scout-mcp] Facilitator: ${(facilitatorConfig as { url?: string }).url ?? "CDP default"}` +
+      (config.CDP_API_KEY_ID ? " (CDP @coinbase/x402 auth)" : " (no auth)"),
   );
 
   const network = config.NETWORK as Network;
