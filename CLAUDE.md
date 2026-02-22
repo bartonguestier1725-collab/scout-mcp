@@ -237,7 +237,7 @@ npm run build && systemctl --user restart x402-scout
 PRICE_X=$0.20         # /scout/x の価格
 PRICE_XFULL=$0.25     # /scout/report/full の価格
 PRICE_LOW=$0.001      # その他の価格
-XAI_COST_PER_CALL=0.08  # xAI 平均コスト（実測ベースライン）
+XAI_COST_PER_CALL=0.05  # xAI 平均コスト（2026-02-22 ダッシュボード実測確定）
 ```
 
 変更後: `systemctl --user restart x402-scout`

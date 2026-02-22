@@ -52,7 +52,7 @@ export const config = {
   PRICE_LOW: process.env.PRICE_LOW ?? "$0.001",
   PRICE_X: process.env.PRICE_X ?? "$0.20",
   PRICE_XFULL: process.env.PRICE_XFULL ?? "$0.25",
-  XAI_COST_PER_CALL: Number(process.env.XAI_COST_PER_CALL) || 0.08,
+  XAI_COST_PER_CALL: Number(process.env.XAI_COST_PER_CALL) || 0.05,
 
   // RapidAPI proxy authentication (optional — empty = disabled)
   RAPIDAPI_PROXY_SECRET: process.env.RAPIDAPI_PROXY_SECRET ?? "",

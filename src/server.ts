@@ -200,7 +200,7 @@ async function startServer() {
       { input: { type: "http", queryParams: { q: "ai-agents" } }, output: { type: "json" } },
     ),
     "GET /scout/x": makeRoute(
-      "Search X/Twitter via xAI Grok with web search (~$0.08 upstream cost)",
+      "Search X/Twitter via xAI Grok with web search (~$0.05 upstream cost)",
       PRICE_X,
       {
         input: { type: "http", queryParams: { q: "x402 protocol" } },
