@@ -247,13 +247,36 @@ async function startServer() {
     return x402Mw(req, res, next);
   });
 
+  // HEAD guard: prevent health-check bots from triggering API calls.
+  // x402 routes only match "GET" verb, so HEAD bypasses payment.
+  // Express routes HEAD→GET by default, causing free API execution.
+  app.use("/scout", (req: Request, res: Response, next) => {
+    if (req.method === "HEAD") return res.sendStatus(402);
+    next();
+  });
+
+  // Request logger: log all /scout/* requests for audit trail
+  app.use("/scout", (req: Request, _res: Response, next) => {
+    const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
+    const ch = (req as any)._channel || "x402";
+    console.error(
+      `[req] ${req.method} ${req.originalUrl} from=${ip} ch=${ch} ua=${(req.headers["user-agent"] || "").slice(0, 80)}`,
+    );
+    next();
+  });
+
   // Request counter (runs for all requests including free ones)
   app.use((req: Request, _res: Response, next) => {
     stats.requests_total++;
     const key = `${req.method} ${req.path}`;
     stats.requests_by_endpoint[key] = (stats.requests_by_endpoint[key] || 0) + 1;
-    const ch = (req as any)._channel
-      || (key.startsWith("GET /health") || key.startsWith("GET /.well-known") || key.startsWith("GET /openapi") ? "free" : "x402");
+    const isFree =
+      req.path === "/health" ||
+      req.path.startsWith("/.well-known") ||
+      req.path === "/openapi.json" ||
+      req.path === "/robots.txt" ||
+      req.path === "/";
+    const ch = (req as any)._channel || (isFree ? "free" : "x402");
     stats.requests_by_channel[ch] = (stats.requests_by_channel[ch] || 0) + 1;
     next();
   });
