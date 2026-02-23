@@ -64,6 +64,13 @@ ENDPOINTS = [
     "/scout/ph?q=ai-agents",
     "/scout/x402?q=weather",
     "/scout/report?q=x402",
+    "/scout/devto?q=typescript",
+    "/scout/hashnode?q=react",
+    "/scout/lobsters?q=rust",
+    "/scout/stackoverflow?q=async+await",
+    "/scout/arxiv?q=transformer",
+    "/scout/scholar?q=machine+learning",
+    "/scout/gitlab?q=kubernetes",
 ]
 
 
