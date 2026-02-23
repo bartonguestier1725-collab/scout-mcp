@@ -52,8 +52,13 @@ scout-mcp/
 │       ├── lobsters-search.ts      # Lobste.rs 検索 (JSON API)
 │       ├── stackexchange-search.ts # StackExchange 検索 (API v2.3)
 │       ├── arxiv-search.ts         # ArXiv 論文検索 (Atom API)
-│       ├── reddit-search.ts        # Reddit 検索 (OAuth2, MCP限定)
+│       ├── reddit-search.ts        # Reddit 検索 (.json feeds, MCP限定)
 │       ├── youtube-search.ts       # YouTube 検索 (Data API v3)
+│       ├── zenn-search.ts          # Zenn 記事検索 (非公式API, MCP限定)
+│       ├── qiita-search.ts         # Qiita 記事検索 (API v2, MCP限定)
+│       ├── semantic-scholar-search.ts # Semantic Scholar 論文検索
+│       ├── lemmy-search.ts         # Lemmy 検索 (Fediverse, MCP限定)
+│       ├── gitlab-search.ts        # GitLab プロジェクト検索
 │       └── scout-report.ts         # 複合レポート (並列実行)
 └── build/                 # tsc 出力（git 管理外）
 ```
@@ -89,17 +94,22 @@ scout-mcp/
 | 11 | `lobsters_search` | Lobste.rs JSON | 不要 | 無料 | 動作確認済 |
 | 12 | `stackexchange_search` | SE API v2.3 | SE_API_KEY 任意 | 無料 | 動作確認済 |
 | 13 | `arxiv_search` | ArXiv Atom API | 不要 | 無料 | 動作確認済 |
-| 14 | `reddit_search` | Reddit OAuth2 | REDDIT_CLIENT_* 必須 | 無料 | MCP限定 |
+| 14 | `reddit_search` | Reddit .json feeds | 不要 | 無料 | MCP限定 |
 | 15 | `youtube_search` | YouTube Data API v3 | YOUTUBE_API_KEY 必須 | 無料 | MCP限定 |
-| 16 | `scout_report` | 上記を並列合成 | 各ソースに依存 | X 使用時課金 | 動作確認済 |
+| 16 | `zenn_search` | Zenn 非公式 API | 不要 | 無料 | MCP限定 |
+| 17 | `qiita_search` | Qiita API v2 | QIITA_TOKEN 任意 | 無料 | MCP限定 |
+| 18 | `semantic_scholar_search` | Semantic Scholar API | S2_API_KEY 任意 | 無料 | 動作確認済 |
+| 19 | `lemmy_search` | Lemmy API v3 | 不要 | 無料 | MCP限定 |
+| 20 | `gitlab_search` | GitLab API v4 | 不要 | 無料 | 動作確認済 |
+| 21 | `scout_report` | 上記を並列合成 | 各ソースに依存 | X 使用時課金 | 動作確認済 |
 
 ### scout_report の focus プリセット
 
 | focus | 使うソース |
 |-------|-----------|
-| `balanced` (デフォルト) | HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv（9ソース） |
+| `balanced` (デフォルト) | HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Zenn, Qiita, Semantic Scholar, Lemmy, GitLab（14ソース） |
 | `trending` | HN, X, Product Hunt, Dev.to, Lobsters（5ソース） |
-| `comprehensive` | 全 13 ソース |
+| `comprehensive` | 全 18 ソース |
 
 ---
 
@@ -156,9 +166,9 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | `PH_CLIENT_ID` | PH に必須 | Product Hunt Developer App 用 |
 | `PH_CLIENT_SECRET` | PH に必須 | Product Hunt Developer App 用 |
 | `SE_API_KEY` | 任意 | StackExchange レート制限緩和 (300→10K req/day) |
-| `REDDIT_CLIENT_ID` | reddit に必須 | Reddit OAuth2 App ID |
-| `REDDIT_CLIENT_SECRET` | reddit に必須 | Reddit OAuth2 App Secret |
 | `YOUTUBE_API_KEY` | youtube に必須 | YouTube Data API v3 キー |
+| `QIITA_TOKEN` | 任意 | Qiita レート制限緩和 (60→1000 req/h) |
+| `S2_API_KEY` | 任意 | Semantic Scholar dedicated レート (shared→1 req/sec) |
 
 ---
 
@@ -212,8 +222,10 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | `GET /scout/lobsters?q=` | $0.001 | lobsters_search |
 | `GET /scout/stackoverflow?q=` | $0.001 | stackexchange_search |
 | `GET /scout/arxiv?q=` | $0.001 | arxiv_search |
-| `GET /scout/report?q=` | $0.001 | scout_report (balanced, 9ソース) |
-| `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive, 13ソース) |
+| `GET /scout/scholar?q=` | $0.001 | semantic_scholar_search |
+| `GET /scout/gitlab?q=` | $0.001 | gitlab_search |
+| `GET /scout/report?q=` | $0.001 | scout_report (balanced, 14ソース) |
+| `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive, 18ソース) |
 | `GET /openapi.json` | Free | OpenAPI 3.0 spec |
 
 ### 棚置き状況（2026-02-21 18:30 全棚完了）
@@ -246,9 +258,9 @@ npm run build && systemctl --user restart x402-scout
 ### 将来計画
 
 ### 追加ソース候補（実装済み → 上のツール一覧参照）
-- ✅ Reddit, Dev.to, Hashnode, ArXiv, StackExchange, Lobste.rs, YouTube（全て v0.2.0 で追加）
-- Mastodon / Lemmy（Fediverse 系、将来候補）
-- Zenn（日本語技術記事、API あり）
+- ✅ Reddit, Dev.to, Hashnode, ArXiv, StackExchange, Lobste.rs, YouTube（v0.2.0）
+- ✅ Zenn, Qiita, Semantic Scholar, Lemmy, GitLab（v0.3.0）
+- Mastodon（Fediverse 系、将来候補）
 
 ### 価格設定と xAI コスト監視
 
