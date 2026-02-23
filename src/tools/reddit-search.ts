@@ -1,55 +1,19 @@
 /**
- * reddit_search – Reddit 検索 (OAuth2 client credentials)
+ * reddit_search – Reddit 検索（公開 .json フィード）
  *
- * API: https://oauth.reddit.com/search
- * 認証: OAuth2 (REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET)
- * コスト: 無料（個人・非商用利用のみ）
- * レート制限: 100 req/min
+ * API: https://www.reddit.com/search.json
+ * 認証: 不要（User-Agent 必須）
+ * レート制限: 10 req/min（IP ベース）
+ * コスト: 無料
  *
- * 注意: Reddit API は商用利用に $12,000+/年が必要。
- * このツールは MCP モード（自己使用）でのみ有効。x402 HTTP では公開しない。
+ * Reddit の公開 JSON エンドポイントを使用。OAuth 不要。
+ * 商用再配布は不可のため x402 HTTP には出さない（MCP 限定）。
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ok, fail, type ToolResult } from "../types.js";
 import { config } from "../config.js";
-
-// ── Token cache ──────────────────────────────────
-
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && Date.now() < cachedToken.expiresAt) {
-    return cachedToken.token;
-  }
-
-  const auth = Buffer.from(
-    `${config.REDDIT_CLIENT_ID}:${config.REDDIT_CLIENT_SECRET}`,
-  ).toString("base64");
-
-  const res = await fetch("https://www.reddit.com/api/v1/access_token", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "scout-mcp/1.0 (by u/scout-mcp-bot)",
-    },
-    body: "grant_type=client_credentials",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Reddit auth failed: HTTP ${res.status}`);
-  }
-
-  const data = (await res.json()) as { access_token: string; expires_in: number };
-
-  cachedToken = {
-    token: data.access_token,
-    expiresAt: Date.now() + (data.expires_in - 60) * 1000,
-  };
-  return cachedToken.token;
-}
 
 // ── Response types ───────────────────────────────
 
@@ -70,7 +34,7 @@ interface RedditPost {
 
 interface RedditSearchResponse {
   data: {
-    children: Array<{ data: RedditPost }>;
+    children: Array<{ kind: string; data: RedditPost }>;
   };
 }
 
@@ -84,26 +48,16 @@ export async function execute(args: {
   subreddit?: string;
 }): Promise<ToolResult> {
   const start = Date.now();
-  const { query, per_page = config.DEFAULT_PER_PAGE, sort = "relevance", time = "all", subreddit } = args;
-
-  if (!config.REDDIT_CLIENT_ID || !config.REDDIT_CLIENT_SECRET) {
-    return fail(
-      "reddit",
-      query,
-      "REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET not configured",
-      Date.now() - start,
-    );
-  }
+  const { query, per_page = config.DEFAULT_PER_PAGE, sort = "relevance", time = "week", subreddit } = args;
 
   try {
-    const token = await getAccessToken();
-
     const params = new URLSearchParams({
       q: query,
       sort,
       t: time,
-      limit: String(Math.min(per_page, 100)),
-      type: "link", // posts only (not comments or subreddits)
+      limit: String(Math.min(per_page, 25)), // keep modest for public endpoint
+      type: "link",
+      raw_json: "1", // avoid HTML entity encoding
     });
 
     if (subreddit) {
@@ -111,21 +65,28 @@ export async function execute(args: {
     }
 
     const baseUrl = subreddit
-      ? `https://oauth.reddit.com/r/${subreddit}/search`
-      : "https://oauth.reddit.com/search";
+      ? `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/search.json`
+      : "https://www.reddit.com/search.json";
 
     const res = await fetch(`${baseUrl}?${params}`, {
       headers: {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": "scout-mcp/1.0 (by u/scout-mcp-bot)",
+        "User-Agent": "scout-mcp/1.0 (personal research tool)",
       },
     });
 
+    if (res.status === 429) {
+      return fail("reddit", query, "Rate limited (10 req/min). Try again shortly.", Date.now() - start);
+    }
+
     if (!res.ok) {
-      throw new Error(`Reddit API error: HTTP ${res.status}`);
+      throw new Error(`Reddit HTTP ${res.status}`);
     }
 
     const data = (await res.json()) as RedditSearchResponse;
+
+    if (!data?.data?.children) {
+      return fail("reddit", query, "Unexpected response format", Date.now() - start);
+    }
 
     const items = data.data.children.map((child) => {
       const p = child.data;
@@ -155,22 +116,22 @@ export async function execute(args: {
 export function register(server: McpServer): void {
   server.registerTool("reddit_search", {
     description:
-      "Search Reddit for posts and discussions. Returns title, score, comments, subreddit, and content preview. Great for community sentiment, user experiences, and real-world feedback. Requires REDDIT_CLIENT_ID/SECRET.",
+      "Search Reddit for posts and discussions using public JSON feeds (no API key required). Returns title, score, comments, subreddit, and content preview. Great for community sentiment, user experiences, and real-world feedback. Rate limit: 10 req/min.",
     inputSchema: {
       query: z.string().describe("Search query"),
-      per_page: z.number().min(1).max(100).default(10).describe("Results per page"),
+      per_page: z.number().min(1).max(25).default(10).describe("Results per page (max 25)"),
       sort: z
         .enum(["relevance", "hot", "new", "top", "comments"])
         .default("relevance")
         .describe("Sort order"),
       time: z
         .enum(["hour", "day", "week", "month", "year", "all"])
-        .default("all")
-        .describe("Time filter (for 'top' and 'relevance' sorts)"),
+        .default("week")
+        .describe("Time filter"),
       subreddit: z
         .string()
         .optional()
-        .describe("Restrict search to a specific subreddit"),
+        .describe("Restrict search to a specific subreddit (e.g. 'programming')"),
     },
   }, async (args) => {
     const result = await execute(args);
