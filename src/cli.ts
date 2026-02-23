@@ -30,6 +30,10 @@ import { execute as arxivSearch } from "./tools/arxiv-search.js";
 import { execute as redditSearch } from "./tools/reddit-search.js";
 import { execute as youtubeSearch } from "./tools/youtube-search.js";
 import { execute as zennSearch } from "./tools/zenn-search.js";
+import { execute as qiitaSearch } from "./tools/qiita-search.js";
+import { execute as semanticScholarSearch } from "./tools/semantic-scholar-search.js";
+import { execute as lemmySearch } from "./tools/lemmy-search.js";
+import { execute as gitlabSearch } from "./tools/gitlab-search.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: Record<string, (args: any) => Promise<unknown>> = {
@@ -50,6 +54,10 @@ const TOOLS: Record<string, (args: any) => Promise<unknown>> = {
   reddit_search: redditSearch,
   youtube_search: youtubeSearch,
   zenn_search: zennSearch,
+  qiita_search: qiitaSearch,
+  semantic_scholar_search: semanticScholarSearch,
+  lemmy_search: lemmySearch,
+  gitlab_search: gitlabSearch,
 };
 
 async function main() {

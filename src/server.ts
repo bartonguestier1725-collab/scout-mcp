@@ -37,8 +37,12 @@ import { execute as hashnodeSearch } from "./tools/hashnode-search.js";
 import { execute as lobstersSearch } from "./tools/lobsters-search.js";
 import { execute as stackexchangeSearch } from "./tools/stackexchange-search.js";
 import { execute as arxivSearch } from "./tools/arxiv-search.js";
-// Reddit: MCP-only (commercial license required for x402 distribution)
-// YouTube: x402-enabled (YouTube Data API ToS allows API aggregation)
+import { execute as semanticScholarSearch } from "./tools/semantic-scholar-search.js";
+import { execute as gitlabSearch } from "./tools/gitlab-search.js";
+// Reddit: MCP-only (public .json feeds, commercial redistribution unclear)
+// YouTube: MCP-only (YouTube Data API ToS restriction)
+// Qiita: MCP-only (unofficial API, personal use only)
+// Lemmy: MCP-only (community instance, personal use)
 
 // ── Apify Actor (lazy-loaded only when running on Apify) ────
 
@@ -326,7 +330,7 @@ async function startServer() {
         { input: { type: "http", queryParams: { q: "weather" } }, output: { type: "json" } },
       ),
       "GET /scout/report": makeRoute(
-        "Multi-source intelligence report (9 free sources: HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv)",
+        "Multi-source intelligence report (14 free sources: HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Zenn, Qiita, Semantic Scholar, Lemmy, GitLab)",
         PRICE_LOW,
         {
           input: { type: "http", queryParams: { q: "MCP servers" } },
@@ -334,7 +338,7 @@ async function startServer() {
         },
       ),
       "GET /scout/report/full": makeRoute(
-        "Comprehensive intelligence report across all 13 sources including X, Product Hunt, Reddit, and YouTube",
+        "Comprehensive intelligence report across all 18 sources including X, Product Hunt, Reddit, YouTube, Qiita, Semantic Scholar, Lemmy, and GitLab",
         PRICE_XFULL,
         { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
       ),
@@ -362,6 +366,16 @@ async function startServer() {
         "Search ArXiv for academic papers and preprints",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "transformer" } }, output: { type: "json" } },
+      ),
+      "GET /scout/scholar": makeRoute(
+        "Search Semantic Scholar for academic papers (200M+ papers, citation graph)",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "large language models" } }, output: { type: "json" } },
+      ),
+      "GET /scout/gitlab": makeRoute(
+        "Search GitLab.com for public projects (enterprise OSS, EU projects)",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "kubernetes" } }, output: { type: "json" } },
       ),
     };
 
@@ -470,6 +484,7 @@ async function startServer() {
     "/scout/report", "/scout/report/full",
     "/scout/devto", "/scout/hashnode", "/scout/lobsters",
     "/scout/stackoverflow", "/scout/arxiv",
+    "/scout/scholar", "/scout/gitlab",
   ];
 
   app.get("/.well-known/x402", (req: Request, res: Response) => {
@@ -490,6 +505,8 @@ async function startServer() {
         "- `GET /scout/ph?q=<query>` \u2014 Product Hunt ($0.001)\n" +
         "- `GET /scout/x?q=<query>` \u2014 X/Twitter ($0.20)\n" +
         "- `GET /scout/x402?q=<query>` \u2014 x402 Bazaar search ($0.001)\n" +
+        "- `GET /scout/scholar?q=<query>` \u2014 Semantic Scholar papers ($0.001)\n" +
+        "- `GET /scout/gitlab?q=<query>` \u2014 GitLab projects ($0.001)\n" +
         "- `GET /scout/report?q=<query>` \u2014 Balanced report ($0.001)\n" +
         "- `GET /scout/report/full?q=<query>` \u2014 Full report ($0.25)\n\n" +
         "## Pricing\n" +
@@ -620,8 +637,8 @@ async function startServer() {
         },
         "/scout/report": {
           get: {
-            summary: "Balanced intelligence report (9 free sources)",
-            description: "Run a multi-source intelligence report across 9 free sources in parallel: Hacker News, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, and ArXiv. Returns aggregated results from all sources in a single response.",
+            summary: "Balanced intelligence report (14 free sources)",
+            description: "Run a multi-source intelligence report across 14 free sources in parallel: Hacker News, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Zenn, Qiita, Semantic Scholar, Lemmy, and GitLab. Returns aggregated results from all sources in a single response.",
             operationId: "balancedReport",
             parameters: [
               { name: "q", in: "query", required: true, schema: { type: "string", example: "MCP servers" }, description: "Search query to scout across sources" },
@@ -632,8 +649,8 @@ async function startServer() {
         },
         "/scout/report/full": {
           get: {
-            summary: "Comprehensive report (all 13 sources including X)",
-            description: "Run a comprehensive intelligence report across all 13 sources in parallel: Hacker News, GitHub, npm, PyPI, X/Twitter, Product Hunt, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Reddit, and YouTube. Premium endpoint because it includes X/Twitter search (~$0.05 upstream cost).",
+            summary: "Comprehensive report (all 18 sources including X)",
+            description: "Run a comprehensive intelligence report across all 18 sources in parallel: Hacker News, GitHub, npm, PyPI, X/Twitter, Product Hunt, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Reddit, YouTube, Zenn, Qiita, Semantic Scholar, Lemmy, and GitLab. Premium endpoint because it includes X/Twitter search (~$0.05 upstream cost).",
             operationId: "fullReport",
             parameters: [
               { name: "q", in: "query", required: true, schema: { type: "string", example: "AI agents" }, description: "Search query to scout across all sources" },
@@ -706,6 +723,33 @@ async function startServer() {
               { name: "category", in: "query", schema: { type: "string", example: "cs.AI" }, description: "ArXiv category filter" },
             ],
             responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+          },
+        },
+        "/scout/scholar": {
+          get: {
+            summary: "Search Semantic Scholar papers",
+            description: "Search Semantic Scholar for academic papers across all disciplines (200M+ papers). Returns title, abstract, citations, influential citations, authors, journal, open access PDF link, and fields of study. Superior to ArXiv alone because it covers all fields and includes citation graph data.",
+            operationId: "searchSemanticScholar",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "large language models" }, description: "Search query for papers" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 }, description: "Results per page" },
+              { name: "year", in: "query", schema: { type: "string", example: "2024" }, description: "Filter by year or range (e.g. '2024', '2020-2024')" },
+              { name: "fields_of_study", in: "query", schema: { type: "string", example: "Computer Science" }, description: "Filter by field" },
+            ],
+            responses: { "200": { description: "Search results with paper title, abstract, citations, authors, and PDF links" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+          },
+        },
+        "/scout/gitlab": {
+          get: {
+            summary: "Search GitLab projects",
+            description: "Search GitLab.com for public projects. Returns name, description, stars, forks, topics, and last activity date. Covers enterprise OSS and projects not hosted on GitHub.",
+            operationId: "searchGitLab",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "kubernetes" }, description: "Search query for GitLab projects" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 }, description: "Results per page" },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["stars", "updated", "name"], default: "stars" }, description: "Sort order" },
+            ],
+            responses: { "200": { description: "Search results with project name, stars, forks, topics, and activity" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
       },
@@ -971,6 +1015,41 @@ async function startServer() {
         per_page: perPage(req),
         sort: (req.query.sort as "relevance" | "date") || undefined,
         category: (req.query.category as string) || undefined,
+      });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  app.get("/scout/scholar", async (req: Request, res: Response) => {
+    try {
+      const result = await semanticScholarSearch({
+        query: q(req),
+        per_page: perPage(req),
+        year: (req.query.year as string) || undefined,
+        fields_of_study: (req.query.fields_of_study as string) || undefined,
+      });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  app.get("/scout/gitlab", async (req: Request, res: Response) => {
+    try {
+      const result = await gitlabSearch({
+        query: q(req),
+        per_page: perPage(req),
+        sort: (req.query.sort as "stars" | "updated" | "name") || undefined,
       });
       if (result.success && !(await apifyCharge("search-free"))) {
         return res.status(402).json({ error: "Apify charge limit reached" });

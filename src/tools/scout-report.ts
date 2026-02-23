@@ -23,13 +23,18 @@ import { execute as arxivSearch } from "./arxiv-search.js";
 import { execute as redditSearch } from "./reddit-search.js";
 import { execute as youtubeSearch } from "./youtube-search.js";
 import { execute as zennSearch } from "./zenn-search.js";
+import { execute as qiitaSearch } from "./qiita-search.js";
+import { execute as semanticScholarSearch } from "./semantic-scholar-search.js";
+import { execute as lemmySearch } from "./lemmy-search.js";
+import { execute as gitlabSearch } from "./gitlab-search.js";
 
 // ── Source registry ───────────────────────────────
 
 type SourceId =
   | "hn" | "npm" | "github" | "x" | "pypi" | "producthunt"
   | "devto" | "hashnode" | "lobsters" | "stackexchange" | "arxiv"
-  | "reddit" | "youtube" | "zenn";
+  | "reddit" | "youtube" | "zenn"
+  | "qiita" | "semantic_scholar" | "lemmy" | "gitlab";
 
 const SOURCE_EXECUTORS: Record<SourceId, (query: string, perPage: number) => Promise<ToolResult>> = {
   hn: (q, n) => hnSearch({ query: q, per_page: n }),
@@ -46,16 +51,22 @@ const SOURCE_EXECUTORS: Record<SourceId, (query: string, perPage: number) => Pro
   reddit: (q, n) => redditSearch({ query: q, per_page: n }),
   youtube: (q, n) => youtubeSearch({ query: q, per_page: n }),
   zenn: (q, n) => zennSearch({ query: q, per_page: n }),
+  qiita: (q, n) => qiitaSearch({ query: q, per_page: n }),
+  semantic_scholar: (q, n) => semanticScholarSearch({ query: q, per_page: n }),
+  lemmy: (q, n) => lemmySearch({ query: q, per_page: n }),
+  gitlab: (q, n) => gitlabSearch({ query: q, per_page: n }),
 };
 
 const ALL_SOURCES: SourceId[] = [
   "hn", "github", "npm", "pypi", "x", "producthunt",
   "devto", "hashnode", "lobsters", "stackexchange", "arxiv",
   "reddit", "youtube", "zenn",
+  "qiita", "semantic_scholar", "lemmy", "gitlab",
 ];
 const FREE_SOURCES: SourceId[] = [
   "hn", "github", "npm", "pypi",
   "devto", "hashnode", "lobsters", "stackexchange", "arxiv", "zenn",
+  "qiita", "semantic_scholar", "lemmy", "gitlab",
 ];
 
 // ── Focus presets ─────────────────────────────────
@@ -141,7 +152,7 @@ export async function execute(args: {
 export function register(server: McpServer): void {
   server.registerTool("scout_report", {
     description:
-      "Run a multi-source intelligence report. Searches across 14 sources (HN, GitHub, npm, PyPI, X, Product Hunt, Dev.to, Hashnode, Lobste.rs, StackExchange, ArXiv, Reddit, YouTube, Zenn) in parallel. Use 'focus' to control source selection: 'balanced' (10 free APIs), 'trending' (HN+X+PH+Dev.to+Lobsters), 'comprehensive' (all 14). Or specify exact sources. X search uses xAI Grok API (~$0.005/call). Reddit requires API keys. YouTube requires API key.",
+      "Run a multi-source intelligence report. Searches across 18 sources (HN, GitHub, npm, PyPI, X, Product Hunt, Dev.to, Hashnode, Lobste.rs, StackExchange, ArXiv, Reddit, YouTube, Zenn, Qiita, Semantic Scholar, Lemmy, GitLab) in parallel. Use 'focus' to control source selection: 'balanced' (14 free APIs), 'trending' (HN+X+PH+Dev.to+Lobsters), 'comprehensive' (all 18). Or specify exact sources. X search uses xAI Grok API (~$0.005/call). Reddit requires API keys. YouTube requires API key.",
     inputSchema: {
       query: z.string().describe("Search query to scout across sources"),
       sources: z
@@ -149,13 +160,14 @@ export function register(server: McpServer): void {
           "hn", "npm", "github", "x", "pypi", "producthunt",
           "devto", "hashnode", "lobsters", "stackexchange", "arxiv",
           "reddit", "youtube", "zenn",
+          "qiita", "semantic_scholar", "lemmy", "gitlab",
         ]))
         .optional()
         .describe("Specific sources to search (overrides focus)"),
       focus: z
         .enum(["trending", "comprehensive", "balanced"])
         .default("balanced")
-        .describe("Preset: balanced=10 free APIs, trending=HN+X+PH+Dev.to+Lobsters, comprehensive=all 14"),
+        .describe("Preset: balanced=14 free APIs, trending=HN+X+PH+Dev.to+Lobsters, comprehensive=all 18"),
       per_page: z
         .number()
         .min(1)

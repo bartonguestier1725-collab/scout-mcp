@@ -27,6 +27,10 @@ import { register as registerArxivSearch } from "./tools/arxiv-search.js";
 import { register as registerRedditSearch } from "./tools/reddit-search.js";
 import { register as registerYoutubeSearch } from "./tools/youtube-search.js";
 import { register as registerZennSearch } from "./tools/zenn-search.js";
+import { register as registerQiitaSearch } from "./tools/qiita-search.js";
+import { register as registerSemanticScholarSearch } from "./tools/semantic-scholar-search.js";
+import { register as registerLemmySearch } from "./tools/lemmy-search.js";
+import { register as registerGitlabSearch } from "./tools/gitlab-search.js";
 
 const server = new McpServer({
   name: "scout-mcp",
@@ -51,6 +55,10 @@ registerArxivSearch(server);
 registerRedditSearch(server);
 registerYoutubeSearch(server);
 registerZennSearch(server);
+registerQiitaSearch(server);
+registerSemanticScholarSearch(server);
+registerLemmySearch(server);
+registerGitlabSearch(server);
 
 async function main() {
   const transport = new StdioServerTransport();
