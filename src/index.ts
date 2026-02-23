@@ -26,6 +26,7 @@ import { register as registerStackexchangeSearch } from "./tools/stackexchange-s
 import { register as registerArxivSearch } from "./tools/arxiv-search.js";
 import { register as registerRedditSearch } from "./tools/reddit-search.js";
 import { register as registerYoutubeSearch } from "./tools/youtube-search.js";
+import { register as registerZennSearch } from "./tools/zenn-search.js";
 
 const server = new McpServer({
   name: "scout-mcp",
@@ -49,6 +50,7 @@ registerStackexchangeSearch(server);
 registerArxivSearch(server);
 registerRedditSearch(server);
 registerYoutubeSearch(server);
+registerZennSearch(server);
 
 async function main() {
   const transport = new StdioServerTransport();

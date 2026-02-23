@@ -29,6 +29,7 @@ import { execute as stackexchangeSearch } from "./tools/stackexchange-search.js"
 import { execute as arxivSearch } from "./tools/arxiv-search.js";
 import { execute as redditSearch } from "./tools/reddit-search.js";
 import { execute as youtubeSearch } from "./tools/youtube-search.js";
+import { execute as zennSearch } from "./tools/zenn-search.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: Record<string, (args: any) => Promise<unknown>> = {
@@ -48,6 +49,7 @@ const TOOLS: Record<string, (args: any) => Promise<unknown>> = {
   arxiv_search: arxivSearch,
   reddit_search: redditSearch,
   youtube_search: youtubeSearch,
+  zenn_search: zennSearch,
 };
 
 async function main() {
