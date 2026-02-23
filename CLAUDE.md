@@ -47,6 +47,13 @@ scout-mcp/
 │       ├── pypi-search.ts          # PyPI パッケージ検索
 │       ├── producthunt-search.ts   # Product Hunt 検索 (GraphQL)
 │       ├── bazaar-search.ts        # x402 Bazaar 検索 (CDP Discovery)
+│       ├── devto-search.ts         # Dev.to 記事検索 (Forem API)
+│       ├── hashnode-search.ts      # Hashnode 記事検索 (GraphQL)
+│       ├── lobsters-search.ts      # Lobste.rs 検索 (JSON API)
+│       ├── stackexchange-search.ts # StackExchange 検索 (API v2.3)
+│       ├── arxiv-search.ts         # ArXiv 論文検索 (Atom API)
+│       ├── reddit-search.ts        # Reddit 検索 (OAuth2, MCP限定)
+│       ├── youtube-search.ts       # YouTube 検索 (Data API v3)
 │       └── scout-report.ts         # 複合レポート (並列実行)
 └── build/                 # tsc 出力（git 管理外）
 ```
@@ -77,15 +84,22 @@ scout-mcp/
 | 6 | `pypi_search` | PyPI JSON API | 不要 | 無料 | 動作確認済 |
 | 7 | `producthunt_search` | PH GraphQL API | PH_CLIENT_* 必須 | 無料 | 動作確認済 |
 | 8 | `bazaar_search` | CDP Discovery API | 不要 | 無料 | 動作確認済 |
-| 9 | `scout_report` | 上記を並列合成 | 各ソースに依存 | X 使用時課金 | 動作確認済 |
+| 9 | `devto_search` | Dev.to Forem API | 不要 | 無料 | 動作確認済 |
+| 10 | `hashnode_search` | Hashnode GraphQL | 不要 | 無料 | 動作確認済 |
+| 11 | `lobsters_search` | Lobste.rs JSON | 不要 | 無料 | 動作確認済 |
+| 12 | `stackexchange_search` | SE API v2.3 | SE_API_KEY 任意 | 無料 | 動作確認済 |
+| 13 | `arxiv_search` | ArXiv Atom API | 不要 | 無料 | 動作確認済 |
+| 14 | `reddit_search` | Reddit OAuth2 | REDDIT_CLIENT_* 必須 | 無料 | MCP限定 |
+| 15 | `youtube_search` | YouTube Data API v3 | YOUTUBE_API_KEY 必須 | 無料 | MCP限定 |
+| 16 | `scout_report` | 上記を並列合成 | 各ソースに依存 | X 使用時課金 | 動作確認済 |
 
 ### scout_report の focus プリセット
 
 | focus | 使うソース |
 |-------|-----------|
-| `balanced` (デフォルト) | HN, GitHub, npm, PyPI |
-| `trending` | HN, X, Product Hunt |
-| `comprehensive` | 全 6 ソース |
+| `balanced` (デフォルト) | HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv（9ソース） |
+| `trending` | HN, X, Product Hunt, Dev.to, Lobsters（5ソース） |
+| `comprehensive` | 全 13 ソース |
 
 ---
 
@@ -141,6 +155,10 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | `GITHUB_TOKEN` | 設定済 | GitHub API レート制限緩和 (10→30 req/min) |
 | `PH_CLIENT_ID` | PH に必須 | Product Hunt Developer App 用 |
 | `PH_CLIENT_SECRET` | PH に必須 | Product Hunt Developer App 用 |
+| `SE_API_KEY` | 任意 | StackExchange レート制限緩和 (300→10K req/day) |
+| `REDDIT_CLIENT_ID` | reddit に必須 | Reddit OAuth2 App ID |
+| `REDDIT_CLIENT_SECRET` | reddit に必須 | Reddit OAuth2 App Secret |
+| `YOUTUBE_API_KEY` | youtube に必須 | YouTube Data API v3 キー |
 
 ---
 
@@ -189,8 +207,13 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | `GET /scout/ph?q=` | $0.001 | producthunt_search |
 | `GET /scout/x?q=` | $0.20 | x_search |
 | `GET /scout/x402?q=` | $0.001 | bazaar_search |
-| `GET /scout/report?q=` | $0.001 | scout_report (balanced) |
-| `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive) |
+| `GET /scout/devto?q=` | $0.001 | devto_search |
+| `GET /scout/hashnode?q=` | $0.001 | hashnode_search |
+| `GET /scout/lobsters?q=` | $0.001 | lobsters_search |
+| `GET /scout/stackoverflow?q=` | $0.001 | stackexchange_search |
+| `GET /scout/arxiv?q=` | $0.001 | arxiv_search |
+| `GET /scout/report?q=` | $0.001 | scout_report (balanced, 9ソース) |
+| `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive, 13ソース) |
 | `GET /openapi.json` | Free | OpenAPI 3.0 spec |
 
 ### 棚置き状況（2026-02-21 18:30 全棚完了）
@@ -222,11 +245,10 @@ npm run build && systemctl --user restart x402-scout
 
 ### 将来計画
 
-### 追加ソース候補
-- Reddit (Pushshift API or OAuth)
-- DEV.to / Hashnode (REST API)
-- ArXiv (search API)
-- Stack Overflow (API)
+### 追加ソース候補（実装済み → 上のツール一覧参照）
+- ✅ Reddit, Dev.to, Hashnode, ArXiv, StackExchange, Lobste.rs, YouTube（全て v0.2.0 で追加）
+- Mastodon / Lemmy（Fediverse 系、将来候補）
+- Zenn（日本語技術記事、API あり）
 
 ### 価格設定と xAI コスト監視
 
