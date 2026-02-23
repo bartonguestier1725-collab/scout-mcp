@@ -15,10 +15,20 @@ import { execute as githubSearch } from "./github-search.js";
 import { execute as xSearch } from "./x-search.js";
 import { execute as pypiSearch } from "./pypi-search.js";
 import { execute as phSearch } from "./producthunt-search.js";
+import { execute as devtoSearch } from "./devto-search.js";
+import { execute as hashnodeSearch } from "./hashnode-search.js";
+import { execute as lobstersSearch } from "./lobsters-search.js";
+import { execute as stackexchangeSearch } from "./stackexchange-search.js";
+import { execute as arxivSearch } from "./arxiv-search.js";
+import { execute as redditSearch } from "./reddit-search.js";
+import { execute as youtubeSearch } from "./youtube-search.js";
 
 // ── Source registry ───────────────────────────────
 
-type SourceId = "hn" | "npm" | "github" | "x" | "pypi" | "producthunt";
+type SourceId =
+  | "hn" | "npm" | "github" | "x" | "pypi" | "producthunt"
+  | "devto" | "hashnode" | "lobsters" | "stackexchange" | "arxiv"
+  | "reddit" | "youtube";
 
 const SOURCE_EXECUTORS: Record<SourceId, (query: string, perPage: number) => Promise<ToolResult>> = {
   hn: (q, n) => hnSearch({ query: q, per_page: n }),
@@ -27,10 +37,24 @@ const SOURCE_EXECUTORS: Record<SourceId, (query: string, perPage: number) => Pro
   x: (q, n) => xSearch({ query: q, per_page: n }),
   pypi: (q, n) => pypiSearch({ query: q, per_page: n }),
   producthunt: (q, n) => phSearch({ query: q, per_page: n }),
+  devto: (q, n) => devtoSearch({ query: q, per_page: n }),
+  hashnode: (q, n) => hashnodeSearch({ query: q, per_page: n }),
+  lobsters: (q, n) => lobstersSearch({ query: q, per_page: n }),
+  stackexchange: (q, n) => stackexchangeSearch({ query: q, per_page: n }),
+  arxiv: (q, n) => arxivSearch({ query: q, per_page: n }),
+  reddit: (q, n) => redditSearch({ query: q, per_page: n }),
+  youtube: (q, n) => youtubeSearch({ query: q, per_page: n }),
 };
 
-const ALL_SOURCES: SourceId[] = ["hn", "github", "npm", "pypi", "x", "producthunt"];
-const FREE_SOURCES: SourceId[] = ["hn", "github", "npm", "pypi"];
+const ALL_SOURCES: SourceId[] = [
+  "hn", "github", "npm", "pypi", "x", "producthunt",
+  "devto", "hashnode", "lobsters", "stackexchange", "arxiv",
+  "reddit", "youtube",
+];
+const FREE_SOURCES: SourceId[] = [
+  "hn", "github", "npm", "pypi",
+  "devto", "hashnode", "lobsters", "stackexchange", "arxiv",
+];
 
 // ── Focus presets ─────────────────────────────────
 
@@ -42,7 +66,7 @@ function resolveSources(
 
   switch (focus) {
     case "trending":
-      return ["hn", "x", "producthunt"];
+      return ["hn", "x", "producthunt", "devto", "lobsters"];
     case "comprehensive":
       return ALL_SOURCES;
     case "balanced":
@@ -115,17 +139,21 @@ export async function execute(args: {
 export function register(server: McpServer): void {
   server.registerTool("scout_report", {
     description:
-      "Run a multi-source intelligence report. Searches across HN, GitHub, npm, PyPI, X, and Product Hunt in parallel. Use 'focus' to control source selection: 'balanced' (free APIs only), 'trending' (HN+X+PH), 'comprehensive' (all 6). Or specify exact sources. X search uses xAI Grok API (~$0.005/call).",
+      "Run a multi-source intelligence report. Searches across 13 sources (HN, GitHub, npm, PyPI, X, Product Hunt, Dev.to, Hashnode, Lobste.rs, StackExchange, ArXiv, Reddit, YouTube) in parallel. Use 'focus' to control source selection: 'balanced' (9 free APIs), 'trending' (HN+X+PH+Dev.to+Lobsters), 'comprehensive' (all 13). Or specify exact sources. X search uses xAI Grok API (~$0.005/call). Reddit requires API keys. YouTube requires API key.",
     inputSchema: {
       query: z.string().describe("Search query to scout across sources"),
       sources: z
-        .array(z.enum(["hn", "npm", "github", "x", "pypi", "producthunt"]))
+        .array(z.enum([
+          "hn", "npm", "github", "x", "pypi", "producthunt",
+          "devto", "hashnode", "lobsters", "stackexchange", "arxiv",
+          "reddit", "youtube",
+        ]))
         .optional()
         .describe("Specific sources to search (overrides focus)"),
       focus: z
         .enum(["trending", "comprehensive", "balanced"])
         .default("balanced")
-        .describe("Preset: balanced=free APIs, trending=HN+X+PH, comprehensive=all 6"),
+        .describe("Preset: balanced=9 free APIs, trending=HN+X+PH+Dev.to+Lobsters, comprehensive=all 13"),
       per_page: z
         .number()
         .min(1)

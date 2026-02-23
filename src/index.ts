@@ -19,10 +19,17 @@ import { register as registerPypiSearch } from "./tools/pypi-search.js";
 import { register as registerProducthuntSearch } from "./tools/producthunt-search.js";
 import { register as registerScoutReport } from "./tools/scout-report.js";
 import { register as registerBazaarSearch } from "./tools/bazaar-search.js";
+import { register as registerDevtoSearch } from "./tools/devto-search.js";
+import { register as registerHashnodeSearch } from "./tools/hashnode-search.js";
+import { register as registerLobstersSearch } from "./tools/lobsters-search.js";
+import { register as registerStackexchangeSearch } from "./tools/stackexchange-search.js";
+import { register as registerArxivSearch } from "./tools/arxiv-search.js";
+import { register as registerRedditSearch } from "./tools/reddit-search.js";
+import { register as registerYoutubeSearch } from "./tools/youtube-search.js";
 
 const server = new McpServer({
   name: "scout-mcp",
-  version: "0.1.0",
+  version: "0.2.0",
 });
 
 // Register all tools
@@ -35,6 +42,13 @@ registerPypiSearch(server);
 registerProducthuntSearch(server);
 registerScoutReport(server);
 registerBazaarSearch(server);
+registerDevtoSearch(server);
+registerHashnodeSearch(server);
+registerLobstersSearch(server);
+registerStackexchangeSearch(server);
+registerArxivSearch(server);
+registerRedditSearch(server);
+registerYoutubeSearch(server);
 
 async function main() {
   const transport = new StdioServerTransport();

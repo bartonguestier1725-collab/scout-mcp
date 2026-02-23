@@ -42,7 +42,8 @@ export const config = {
   // x402 payment settings
   EVM_ADDRESS: process.env.EVM_ADDRESS ?? "",
   NETWORK: process.env.NETWORK ?? "eip155:8453",
-  X402_PORT: Number(process.env.X402_PORT) || 4023,
+  X402_PORT: Number(process.env.APIFY_CONTAINER_PORT) || Number(process.env.X402_PORT) || 4023,
+  IS_APIFY: process.env.APIFY_IS_AT_HOME === "1",
   FACILITATOR_URL:
     process.env.FACILITATOR_URL ?? "https://x402.org/facilitator",
   CDP_API_KEY_ID: process.env.CDP_API_KEY_ID ?? "",
@@ -56,6 +57,16 @@ export const config = {
 
   // RapidAPI proxy authentication (optional — empty = disabled)
   RAPIDAPI_PROXY_SECRET: process.env.RAPIDAPI_PROXY_SECRET ?? "",
+
+  // StackExchange (optional — raises rate limit from 300→10,000/day)
+  SE_API_KEY: process.env.SE_API_KEY ?? "",
+
+  // Reddit (required for reddit_search — free for non-commercial/personal use)
+  REDDIT_CLIENT_ID: process.env.REDDIT_CLIENT_ID ?? "",
+  REDDIT_CLIENT_SECRET: process.env.REDDIT_CLIENT_SECRET ?? "",
+
+  // YouTube Data API v3 (required for youtube_search — 10,000 units/day free)
+  YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
 
   // Timeouts & limits
   TIMEOUT_MS: 10_000,

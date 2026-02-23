@@ -32,6 +32,101 @@ import { execute as pypiSearch } from "./tools/pypi-search.js";
 import { execute as phSearch } from "./tools/producthunt-search.js";
 import { execute as scoutReport } from "./tools/scout-report.js";
 import { execute as bazaarSearch } from "./tools/bazaar-search.js";
+import { execute as devtoSearch } from "./tools/devto-search.js";
+import { execute as hashnodeSearch } from "./tools/hashnode-search.js";
+import { execute as lobstersSearch } from "./tools/lobsters-search.js";
+import { execute as stackexchangeSearch } from "./tools/stackexchange-search.js";
+import { execute as arxivSearch } from "./tools/arxiv-search.js";
+// Reddit: MCP-only (commercial license required for x402 distribution)
+// YouTube: x402-enabled (YouTube Data API ToS allows API aggregation)
+
+// ── Apify Actor (lazy-loaded only when running on Apify) ────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Actor: any = null;
+if (config.IS_APIFY) {
+  const apify = await import("apify");
+  Actor = apify.Actor;
+  await Actor.init();
+  console.error("[scout-mcp] Apify Actor initialized");
+}
+
+// ── Apify PPE charge helper ─────────────────────────────────
+
+async function apifyCharge(eventName: string): Promise<boolean> {
+  if (!Actor) return true; // non-Apify: always OK
+  const result = await Actor.charge({ eventName });
+  console.error(`[apify-charge] event=${eventName} limitReached=${result.eventChargeLimitReached}`);
+  return !result.eventChargeLimitReached;
+}
+
+// ── RapidAPI X rate limiter (per-user monthly quota) ────────
+
+/** X call limits per RapidAPI plan (monthly). Plans without X access get 0. */
+const RAPIDAPI_X_LIMITS: Record<string, number> = {
+  BASIC: 0,        // X not available
+  PRO: 0,          // X not available
+  ULTRA: 100,      // 100 X calls/month → max cost $5, profit $14.99
+  MEGA: 500,       // 500 X calls/month → max cost $25, profit $24.99
+};
+
+/** Track X usage: key = "YYYY-MM:{user}", value = count */
+const rapidapiXUsage = new Map<string, number>();
+
+function getMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Check if a RapidAPI request is allowed to use X endpoints.
+ * Returns null if allowed, or an error response object if blocked.
+ */
+function checkRapidApiXLimit(req: Request): { status: number; body: object } | null {
+  if ((req as any)._channel !== "rapidapi") return null; // non-RapidAPI: no limit
+
+  const plan = (req.headers["x-rapidapi-subscription"] as string || "BASIC").toUpperCase();
+  const limit = RAPIDAPI_X_LIMITS[plan] ?? 0;
+
+  if (limit === 0) {
+    return {
+      status: 403,
+      body: {
+        error: `X/Twitter search is not available on the ${plan} plan. Please upgrade to ULTRA or higher.`,
+        plan,
+        upgrade_url: "https://rapidapi.com/bartonguestier1725-collab/api/scout-multi-source-search/pricing",
+      },
+    };
+  }
+
+  const userId = req.headers["x-rapidapi-user"] as string || "unknown";
+  const key = `${getMonthKey()}:${userId}`;
+  const used = rapidapiXUsage.get(key) || 0;
+
+  if (used >= limit) {
+    return {
+      status: 429,
+      body: {
+        error: `Monthly X search limit reached (${limit} calls/month on ${plan} plan).`,
+        plan,
+        used,
+        limit,
+        resets: "1st of next month",
+      },
+    };
+  }
+
+  // Increment usage
+  rapidapiXUsage.set(key, used + 1);
+
+  // Cleanup: remove keys from previous months to prevent memory leak
+  const currentMonth = getMonthKey();
+  for (const k of rapidapiXUsage.keys()) {
+    if (!k.startsWith(currentMonth)) rapidapiXUsage.delete(k);
+  }
+
+  return null;
+}
 
 // ── Stats (in-memory, resets on restart) ────────────────────
 
@@ -39,7 +134,7 @@ const stats = {
   started_at: new Date().toISOString(),
   requests_total: 0,
   requests_by_endpoint: {} as Record<string, number>,
-  requests_by_channel: { x402: 0, rapidapi: 0, free: 0 } as Record<string, number>,
+  requests_by_channel: { x402: 0, rapidapi: 0, apify: 0, free: 0 } as Record<string, number>,
   errors_total: 0,
   x_calls: 0,
   x_cost_estimate: 0,
@@ -112,140 +207,181 @@ const sanitizeError = (err: unknown): string => {
   return msg.replace(/(?:key|token|secret|password|authorization)[=: ]\S+/gi, "[REDACTED]");
 };
 
+// Return 502 when upstream tool fails (success:false).
+// This prevents x402 settlement (which checks statusCode < 400).
+const sendResult = (res: Response, result: ToolResult): void => {
+  res.status(result.success ? 200 : 502).json(result);
+};
+
 // ── Main ────────────────────────────────────────────────────
 
 async function startServer() {
-  if (!config.EVM_ADDRESS) {
+  if (!config.EVM_ADDRESS && !config.IS_APIFY) {
     throw new Error(
       "EVM_ADDRESS not set. Configure .env before starting the HTTP server.",
     );
   }
 
-  // --- Facilitator client ---
-  // Use @coinbase/x402 official helper for CDP facilitator auth.
-  // Falls back to env-configured URL if CDP keys are not set.
-  const facilitatorConfig =
-    config.CDP_API_KEY_ID && config.CDP_API_KEY_SECRET
-      ? createFacilitatorConfig(config.CDP_API_KEY_ID, config.CDP_API_KEY_SECRET)
-      : { url: config.FACILITATOR_URL };
-
-  console.error(
-    `[scout-mcp] Facilitator: ${(facilitatorConfig as { url?: string }).url ?? "CDP default"}` +
-      (config.CDP_API_KEY_ID ? " (CDP @coinbase/x402 auth)" : " (no auth)"),
-  );
-
-  const network = config.NETWORK as Network;
-  const facilitatorClient = new HTTPFacilitatorClient(facilitatorConfig);
-  const resourceServer = new x402ResourceServer(facilitatorClient);
-  resourceServer.register(network, new ExactEvmScheme());
-  resourceServer.registerExtension(bazaarResourceServerExtension);
-
-  // --- Payment options (env-configurable via config.ts) ---
-  const PRICE_LOW = config.PRICE_LOW;
-  const PRICE_X = config.PRICE_X;
-  const PRICE_XFULL = config.PRICE_XFULL;
-
-  const makeOption = (price: string) => ({
-    scheme: "exact" as const,
-    payTo: config.EVM_ADDRESS,
-    price,
-    network,
-  });
-
-  const makeRoute = (
-    description: string,
-    price: string,
-    bazaarInfo?: Record<string, unknown>,
-  ) => ({
-    accepts: [makeOption(price)],
-    description,
-    mimeType: "application/json",
-    ...(bazaarInfo ? { extensions: { bazaar: { info: bazaarInfo } } } : {}),
-  });
-
-  // --- Route configs (x402 payment-protected) ---
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const routes: Record<string, any> = {
-    "GET /scout/hn": makeRoute(
-      "Search Hacker News stories, comments, and polls via Algolia",
-      PRICE_LOW,
-      { input: { type: "http", queryParams: { q: "x402" } }, output: { type: "json" } },
-    ),
-    "GET /scout/npm": makeRoute(
-      "Search the npm package registry by name, keywords, or description",
-      PRICE_LOW,
-      { input: { type: "http", queryParams: { q: "mcp" } }, output: { type: "json" } },
-    ),
-    "GET /scout/github": makeRoute(
-      "Search GitHub repositories by keyword, topic, or description",
-      PRICE_LOW,
-      { input: { type: "http", queryParams: { q: "x402" } }, output: { type: "json" } },
-    ),
-    "GET /scout/github/repo": makeRoute(
-      "Get detailed info about a specific GitHub repository",
-      PRICE_LOW,
-      {
-        input: { type: "http", queryParams: { owner: "coinbase", repo: "x402" } },
-        output: { type: "json" },
-      },
-    ),
-    "GET /scout/pypi": makeRoute(
-      "Look up Python packages on PyPI by name",
-      PRICE_LOW,
-      { input: { type: "http", queryParams: { q: "fastapi" } }, output: { type: "json" } },
-    ),
-    "GET /scout/ph": makeRoute(
-      "Search Product Hunt for products and launches",
-      PRICE_LOW,
-      { input: { type: "http", queryParams: { q: "ai-agents" } }, output: { type: "json" } },
-    ),
-    "GET /scout/x": makeRoute(
-      "Search X/Twitter via xAI Grok with web search (~$0.05 upstream cost)",
-      PRICE_X,
-      {
-        input: { type: "http", queryParams: { q: "x402 protocol" } },
-        output: { type: "json" },
-      },
-    ),
-    "GET /scout/x402": makeRoute(
-      "Search x402 Bazaar for AI-agent APIs with micropayment access",
-      PRICE_LOW,
-      { input: { type: "http", queryParams: { q: "weather" } }, output: { type: "json" } },
-    ),
-    "GET /scout/report": makeRoute(
-      "Multi-source intelligence report (free sources: HN, GitHub, npm, PyPI)",
-      PRICE_LOW,
-      {
-        input: { type: "http", queryParams: { q: "MCP servers" } },
-        output: { type: "json" },
-      },
-    ),
-    "GET /scout/report/full": makeRoute(
-      "Comprehensive intelligence report across all 6 sources including X and Product Hunt",
-      PRICE_XFULL,
-      { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
-    ),
-  };
-
   // --- Express app ---
   const app = express();
   app.set("trust proxy", 1); // Cloudflare Tunnel terminates SSL
 
-  // x402 payment middleware + RapidAPI bypass
-  const x402Mw = paymentMiddleware(routes, resourceServer);
-  app.use((req: Request, res: Response, next) => {
-    const secret = req.headers["x-rapidapi-proxy-secret"];
-    if (
-      config.RAPIDAPI_PROXY_SECRET &&
-      typeof secret === "string" &&
-      secret.length > 0 &&
-      secret === config.RAPIDAPI_PROXY_SECRET
-    ) {
-      (req as any)._channel = "rapidapi";
-      return next();
-    }
-    return x402Mw(req, res, next);
-  });
+  if (config.IS_APIFY) {
+    // Apify Standby: PPE handles billing, no x402 needed
+    console.error("[scout-mcp] Apify mode — skipping x402 initialization");
+    app.use((req: Request, _res: Response, next) => {
+      (req as any)._channel = "apify";
+      next();
+    });
+  } else {
+    // --- Facilitator client ---
+    // Use @coinbase/x402 official helper for CDP facilitator auth.
+    // Falls back to env-configured URL if CDP keys are not set.
+    const facilitatorConfig =
+      config.CDP_API_KEY_ID && config.CDP_API_KEY_SECRET
+        ? createFacilitatorConfig(config.CDP_API_KEY_ID, config.CDP_API_KEY_SECRET)
+        : { url: config.FACILITATOR_URL };
+
+    console.error(
+      `[scout-mcp] Facilitator: ${(facilitatorConfig as { url?: string }).url ?? "CDP default"}` +
+        (config.CDP_API_KEY_ID ? " (CDP @coinbase/x402 auth)" : " (no auth)"),
+    );
+
+    const network = config.NETWORK as Network;
+    const facilitatorClient = new HTTPFacilitatorClient(facilitatorConfig);
+    const resourceServer = new x402ResourceServer(facilitatorClient);
+    resourceServer.register(network, new ExactEvmScheme());
+    resourceServer.registerExtension(bazaarResourceServerExtension);
+
+    // --- Payment options (env-configurable via config.ts) ---
+    const PRICE_LOW = config.PRICE_LOW;
+    const PRICE_X = config.PRICE_X;
+    const PRICE_XFULL = config.PRICE_XFULL;
+
+    const makeOption = (price: string) => ({
+      scheme: "exact" as const,
+      payTo: config.EVM_ADDRESS,
+      price,
+      network,
+    });
+
+    const makeRoute = (
+      description: string,
+      price: string,
+      bazaarInfo?: Record<string, unknown>,
+    ) => ({
+      accepts: [makeOption(price)],
+      description,
+      mimeType: "application/json",
+      ...(bazaarInfo ? { extensions: { bazaar: { info: bazaarInfo } } } : {}),
+    });
+
+    // --- Route configs (x402 payment-protected) ---
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const routes: Record<string, any> = {
+      "GET /scout/hn": makeRoute(
+        "Search Hacker News stories, comments, and polls via Algolia",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "x402" } }, output: { type: "json" } },
+      ),
+      "GET /scout/npm": makeRoute(
+        "Search the npm package registry by name, keywords, or description",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "mcp" } }, output: { type: "json" } },
+      ),
+      "GET /scout/github": makeRoute(
+        "Search GitHub repositories by keyword, topic, or description",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "x402" } }, output: { type: "json" } },
+      ),
+      "GET /scout/github/repo": makeRoute(
+        "Get detailed info about a specific GitHub repository",
+        PRICE_LOW,
+        {
+          input: { type: "http", queryParams: { owner: "coinbase", repo: "x402" } },
+          output: { type: "json" },
+        },
+      ),
+      "GET /scout/pypi": makeRoute(
+        "Look up Python packages on PyPI by name",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "fastapi" } }, output: { type: "json" } },
+      ),
+      "GET /scout/ph": makeRoute(
+        "Search Product Hunt for products and launches",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "ai-agents" } }, output: { type: "json" } },
+      ),
+      "GET /scout/x": makeRoute(
+        "Search X/Twitter via xAI Grok with web search (~$0.05 upstream cost)",
+        PRICE_X,
+        {
+          input: { type: "http", queryParams: { q: "x402 protocol" } },
+          output: { type: "json" },
+        },
+      ),
+      "GET /scout/x402": makeRoute(
+        "Search x402 Bazaar for AI-agent APIs with micropayment access",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "weather" } }, output: { type: "json" } },
+      ),
+      "GET /scout/report": makeRoute(
+        "Multi-source intelligence report (9 free sources: HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv)",
+        PRICE_LOW,
+        {
+          input: { type: "http", queryParams: { q: "MCP servers" } },
+          output: { type: "json" },
+        },
+      ),
+      "GET /scout/report/full": makeRoute(
+        "Comprehensive intelligence report across all 13 sources including X, Product Hunt, Reddit, and YouTube",
+        PRICE_XFULL,
+        { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
+      ),
+      "GET /scout/devto": makeRoute(
+        "Search Dev.to for technical articles and blog posts",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "typescript" } }, output: { type: "json" } },
+      ),
+      "GET /scout/hashnode": makeRoute(
+        "Search Hashnode for technical blog posts",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "react" } }, output: { type: "json" } },
+      ),
+      "GET /scout/lobsters": makeRoute(
+        "Search Lobste.rs for curated tech news and discussions",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "rust" } }, output: { type: "json" } },
+      ),
+      "GET /scout/stackoverflow": makeRoute(
+        "Search Stack Overflow for Q&A",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "async await" } }, output: { type: "json" } },
+      ),
+      "GET /scout/arxiv": makeRoute(
+        "Search ArXiv for academic papers and preprints",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "transformer" } }, output: { type: "json" } },
+      ),
+    };
+
+    // x402 payment middleware + RapidAPI bypass
+    const x402Mw = paymentMiddleware(routes, resourceServer);
+    app.use((req: Request, res: Response, next) => {
+      // RapidAPI proxy: secret header bypass
+      const secret = req.headers["x-rapidapi-proxy-secret"];
+      if (
+        config.RAPIDAPI_PROXY_SECRET &&
+        typeof secret === "string" &&
+        secret.length > 0 &&
+        secret === config.RAPIDAPI_PROXY_SECRET
+      ) {
+        (req as any)._channel = "rapidapi";
+        return next();
+      }
+      return x402Mw(req, res, next);
+    });
+  }
 
   // HEAD guard: prevent health-check bots from triggering API calls.
   // x402 routes only match "GET" verb, so HEAD bypasses payment.
@@ -283,6 +419,11 @@ async function startServer() {
 
   // ── Free endpoints ────────────────────────────────────────
 
+  // Root route — required for Apify Standby readiness probe
+  app.get("/", (_req: Request, res: Response) => {
+    res.json({ status: "ok", service: "scout-mcp" });
+  });
+
   app.get("/health", (_req: Request, res: Response) => {
     const uptime = process.uptime();
     const d = Math.floor(uptime / 86400);
@@ -293,6 +434,7 @@ async function startServer() {
     res.json({
       status: "ok",
       service: "scout-mcp",
+      channel: config.IS_APIFY ? "apify" : "x402",
       network: config.NETWORK,
       uptime: `${d}d ${h}h ${m}m`,
       stats: {
@@ -321,15 +463,21 @@ async function startServer() {
     });
   });
 
+  // Static endpoint list for /.well-known/x402 (no dependency on x402 routes object)
+  const SCOUT_PATHS = [
+    "/scout/hn", "/scout/npm", "/scout/github", "/scout/github/repo",
+    "/scout/pypi", "/scout/ph", "/scout/x", "/scout/x402",
+    "/scout/report", "/scout/report/full",
+    "/scout/devto", "/scout/hashnode", "/scout/lobsters",
+    "/scout/stackoverflow", "/scout/arxiv",
+  ];
+
   app.get("/.well-known/x402", (req: Request, res: Response) => {
     const proto = req.get("x-forwarded-proto") || req.protocol;
     const origin = `${proto}://${req.get("host")}`;
     res.json({
       version: 1,
-      resources: Object.keys(routes).map((r) => {
-        const path = r.split(" ")[1];
-        return `${origin}${path}`;
-      }),
+      resources: SCOUT_PATHS.map((p) => `${origin}${p}`),
       instructions:
         "# Scout MCP \u2014 Multi-source Intelligence API\n\n" +
         "Search across HN, GitHub, npm, PyPI, X, Product Hunt, and x402 Bazaar.\n\n" +
@@ -369,119 +517,195 @@ async function startServer() {
         "/scout/hn": {
           get: {
             summary: "Search Hacker News",
+            description: "Search Hacker News stories, comments, and polls via Algolia. Returns titles, URLs, points, comment counts, and dates. Supports filtering by content type and sorting by relevance or date.",
             operationId: "searchHN",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" }, description: "Search query" },
-              { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "date"] } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
-              { name: "tag", in: "query", schema: { type: "string", enum: ["story", "comment", "poll", "show_hn", "ask_hn"] } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "AI agents" }, description: "Search query string" },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "date"], default: "relevance" }, description: "Sort order: relevance (default) or chronological" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Number of results to return (1-50)" },
+              { name: "tag", in: "query", schema: { type: "string", enum: ["story", "comment", "poll", "show_hn", "ask_hn"] }, description: "Filter by content type" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+            responses: { "200": { description: "Search results with title, URL, points, comments, author, and date" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/npm": {
           get: {
             summary: "Search npm registry",
+            description: "Search the npm package registry by name, keywords, or description. Returns package name, version, description, and quality/popularity/maintenance scores.",
             operationId: "searchNpm",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "mcp server" }, description: "Package name, keywords, or description to search" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Number of results to return (1-50)" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+            responses: { "200": { description: "Search results with package name, version, scores, and links" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/github": {
           get: {
             summary: "Search GitHub repositories",
+            description: "Search GitHub repositories by keyword, topic, or description. Returns stars, forks, language, topics, and license info. Supports GitHub search qualifiers like 'topic:mcp'.",
             operationId: "searchGitHub",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" } },
-              { name: "sort", in: "query", schema: { type: "string", enum: ["stars", "forks", "updated", "best-match"] } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
-              { name: "language", in: "query", schema: { type: "string" } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "x402" }, description: "Search query (supports GitHub qualifiers like topic:mcp, language:python)" },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["stars", "forks", "updated", "best-match"], default: "best-match" }, description: "Sort order for results" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Number of results to return (1-50)" },
+              { name: "language", in: "query", schema: { type: "string", example: "typescript" }, description: "Filter by programming language" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+            responses: { "200": { description: "Search results with repo name, stars, forks, language, topics, and license" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/github/repo": {
           get: {
             summary: "Get GitHub repository details",
+            description: "Get detailed information about a specific GitHub repository including stars, forks, contributors, releases, license, topics, and more. Optionally include top 10 contributors and 5 most recent releases.",
             operationId: "getGitHubRepo",
             parameters: [
-              { name: "owner", in: "query", required: true, schema: { type: "string" } },
-              { name: "repo", in: "query", required: true, schema: { type: "string" } },
-              { name: "include_contributors", in: "query", schema: { type: "boolean" } },
-              { name: "include_releases", in: "query", schema: { type: "boolean" } },
+              { name: "owner", in: "query", required: true, schema: { type: "string", example: "coinbase" }, description: "Repository owner (username or organization)" },
+              { name: "repo", in: "query", required: true, schema: { type: "string", example: "x402" }, description: "Repository name" },
+              { name: "include_contributors", in: "query", schema: { type: "boolean", default: false }, description: "Include top 10 contributors" },
+              { name: "include_releases", in: "query", schema: { type: "boolean", default: false }, description: "Include 5 most recent releases" },
             ],
-            responses: { "200": { description: "Repository details" }, "402": { description: "Payment required ($0.001)" } },
+            responses: { "200": { description: "Repository details with stars, forks, language, topics, license, contributors, and releases" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/pypi": {
           get: {
             summary: "Search PyPI packages",
+            description: "Look up Python packages on PyPI by name. Tries multiple name variants (hyphenated, underscored, with py- prefix). Returns version, summary, license, and links.",
             operationId: "searchPyPI",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "fastapi" }, description: "Package name or approximate name to look up" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 5 }, description: "Number of results to return (1-20)" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+            responses: { "200": { description: "Search results with package name, version, summary, license, and links" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/ph": {
           get: {
             summary: "Search Product Hunt",
+            description: "Search Product Hunt for products and launches. Returns product name, tagline, votes, comments, topics, and makers. Sorted by votes or newest.",
             operationId: "searchProductHunt",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" } },
-              { name: "order", in: "query", schema: { type: "string", enum: ["VOTES", "NEWEST"] } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "developer-tools" }, description: "Topic slug or keywords to search" },
+              { name: "order", in: "query", schema: { type: "string", enum: ["VOTES", "NEWEST"], default: "VOTES" }, description: "Sort by most votes or newest" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 }, description: "Number of results to return (1-20)" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+            responses: { "200": { description: "Search results with product name, tagline, votes, comments, topics, and makers" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/x": {
           get: {
             summary: "Search X/Twitter via xAI Grok",
+            description: "Search X (Twitter) for posts, discussions, and trends using xAI's Grok API with web search. Returns author, text, URL, and date. Premium endpoint due to upstream xAI API cost (~$0.05/call).",
             operationId: "searchX",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" } },
-              { name: "recency", in: "query", schema: { type: "string", enum: ["day", "week", "month"] } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "x402 protocol" }, description: "Search query for X/Twitter" },
+              { name: "recency", in: "query", schema: { type: "string", enum: ["day", "week", "month"], default: "week" }, description: "Time filter for results" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 }, description: "Number of results to return (1-20)" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.20)" } },
+            responses: { "200": { description: "Search results with author, text, URL, date, and cost estimate" }, "402": { description: "Payment required ($0.20)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/x402": {
           get: {
             summary: "Search x402 Bazaar",
+            description: "Search the x402 Bazaar for AI-agent APIs with micropayment access. Queries the CDP Discovery directory of x402-enabled HTTP resources. Returns matching APIs with price, network, and relevance score.",
             operationId: "searchBazaar",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50 } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "weather" }, description: "Search query (matched against API URL and description)" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Number of results to return (1-50)" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" } },
+            responses: { "200": { description: "Search results with API URL, description, price, network, and relevance score" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/report": {
           get: {
-            summary: "Balanced intelligence report (HN, GitHub, npm, PyPI)",
+            summary: "Balanced intelligence report (9 free sources)",
+            description: "Run a multi-source intelligence report across 9 free sources in parallel: Hacker News, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, and ArXiv. Returns aggregated results from all sources in a single response.",
             operationId: "balancedReport",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "MCP servers" }, description: "Search query to scout across sources" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 5 }, description: "Results per source (1-20)" },
             ],
-            responses: { "200": { description: "Multi-source report" }, "402": { description: "Payment required ($0.001)" } },
+            responses: { "200": { description: "Multi-source report with results from each source and summary statistics" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/report/full": {
           get: {
-            summary: "Comprehensive report (all 6 sources including X)",
+            summary: "Comprehensive report (all 13 sources including X)",
+            description: "Run a comprehensive intelligence report across all 13 sources in parallel: Hacker News, GitHub, npm, PyPI, X/Twitter, Product Hunt, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Reddit, and YouTube. Premium endpoint because it includes X/Twitter search (~$0.05 upstream cost).",
             operationId: "fullReport",
             parameters: [
-              { name: "q", in: "query", required: true, schema: { type: "string" } },
-              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20 } },
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "AI agents" }, description: "Search query to scout across all sources" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 5 }, description: "Results per source (1-20)" },
             ],
-            responses: { "200": { description: "Multi-source report" }, "402": { description: "Payment required ($0.25)" } },
+            responses: { "200": { description: "Comprehensive multi-source report with results from all 13 sources" }, "402": { description: "Payment required ($0.25)" }, "502": { description: "Upstream source error" } },
+          },
+        },
+        "/scout/devto": {
+          get: {
+            summary: "Search Dev.to articles",
+            description: "Search Dev.to (Forem) for technical articles and blog posts. Returns title, description, reactions, comments, reading time, and tags.",
+            operationId: "searchDevto",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "typescript" }, description: "Search query" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 30, default: 10 }, description: "Results per page" },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "latest", "top"], default: "relevance" }, description: "Sort order" },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+          },
+        },
+        "/scout/hashnode": {
+          get: {
+            summary: "Search Hashnode posts",
+            description: "Search Hashnode for technical blog posts via GraphQL API. Returns title, brief, reactions, reading time, and tags.",
+            operationId: "searchHashnode",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "react" }, description: "Search query" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 }, description: "Results per page" },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+          },
+        },
+        "/scout/lobsters": {
+          get: {
+            summary: "Search Lobste.rs",
+            description: "Search Lobste.rs for curated tech news. A community-driven link aggregator similar to HN but more tightly curated.",
+            operationId: "searchLobsters",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "rust" }, description: "Search query" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 25, default: 10 }, description: "Results per page" },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["hot", "newest"], default: "hot" }, description: "Sort order" },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+          },
+        },
+        "/scout/stackoverflow": {
+          get: {
+            summary: "Search Stack Overflow",
+            description: "Search Stack Overflow and other StackExchange sites for Q&A. Returns questions with score, answers, views, and tags.",
+            operationId: "searchStackOverflow",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "async await" }, description: "Search query" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Results per page" },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "votes", "activity", "creation"], default: "relevance" }, description: "Sort order" },
+              { name: "site", in: "query", schema: { type: "string", default: "stackoverflow" }, description: "StackExchange site" },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+          },
+        },
+        "/scout/arxiv": {
+          get: {
+            summary: "Search ArXiv papers",
+            description: "Search ArXiv for academic papers and preprints. Returns title, authors, abstract, PDF link, and categories.",
+            operationId: "searchArxiv",
+            parameters: [
+              { name: "q", in: "query", required: true, schema: { type: "string", example: "transformer attention" }, description: "Search query" },
+              { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Results per page" },
+              { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "date"], default: "relevance" }, description: "Sort order" },
+              { name: "category", in: "query", schema: { type: "string", example: "cs.AI" }, description: "ArXiv category filter" },
+            ],
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
           },
         },
       },
@@ -498,7 +722,10 @@ async function startServer() {
         per_page: perPage(req),
         tag: (req.query.tag as string) || undefined,
       });
-      res.json(result);
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -507,7 +734,11 @@ async function startServer() {
 
   app.get("/scout/npm", async (req: Request, res: Response) => {
     try {
-      res.json(await npmSearch({ query: q(req), per_page: perPage(req) }));
+      const result = await npmSearch({ query: q(req), per_page: perPage(req) });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -522,7 +753,10 @@ async function startServer() {
         per_page: perPage(req),
         language: (req.query.language as string) || undefined,
       });
-      res.json(result);
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -543,7 +777,10 @@ async function startServer() {
         include_contributors: req.query.include_contributors === "true",
         include_releases: req.query.include_releases === "true",
       });
-      res.json(result);
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -552,7 +789,11 @@ async function startServer() {
 
   app.get("/scout/pypi", async (req: Request, res: Response) => {
     try {
-      res.json(await pypiSearch({ query: q(req), per_page: perPage(req) }));
+      const result = await pypiSearch({ query: q(req), per_page: perPage(req) });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -566,7 +807,10 @@ async function startServer() {
         order: (req.query.order as "VOTES" | "NEWEST") || undefined,
         per_page: perPage(req),
       });
-      res.json(result);
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -575,6 +819,10 @@ async function startServer() {
 
   app.get("/scout/x", async (req: Request, res: Response) => {
     try {
+      // RapidAPI X rate limit check
+      const xBlock = checkRapidApiXLimit(req);
+      if (xBlock) return res.status(xBlock.status).json(xBlock.body);
+
       stats.x_calls++;
       const result = await xSearch({
         query: q(req),
@@ -582,7 +830,10 @@ async function startServer() {
         per_page: perPage(req, MAX_PER_PAGE_COSTLY),
       });
       trackXCost(result);
-      res.json(result);
+      if (result.success && !(await apifyCharge("search-x"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -591,7 +842,11 @@ async function startServer() {
 
   app.get("/scout/x402", async (req: Request, res: Response) => {
     try {
-      res.json(await bazaarSearch({ query: q(req), per_page: perPage(req) }));
+      const result = await bazaarSearch({ query: q(req), per_page: perPage(req) });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -605,7 +860,10 @@ async function startServer() {
         focus: "balanced",
         per_page: perPage(req, MAX_PER_PAGE_COSTLY),
       });
-      res.json(result);
+      if (result.success && !(await apifyCharge("report-balanced"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -614,6 +872,10 @@ async function startServer() {
 
   app.get("/scout/report/full", async (req: Request, res: Response) => {
     try {
+      // RapidAPI X rate limit check (full report includes X search)
+      const xBlock = checkRapidApiXLimit(req);
+      if (xBlock) return res.status(xBlock.status).json(xBlock.body);
+
       stats.x_calls++;
       const result = await scoutReport({
         query: q(req),
@@ -622,7 +884,98 @@ async function startServer() {
       });
       // scout_report wraps x results — extract cost from nested data if available
       trackXCostFromReport(result);
-      res.json(result);
+      if (result.success && !(await apifyCharge("report-full"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  // ── New source endpoints (Phase 2) ───────────────────────
+
+  app.get("/scout/devto", async (req: Request, res: Response) => {
+    try {
+      const result = await devtoSearch({
+        query: q(req),
+        per_page: perPage(req),
+        sort: (req.query.sort as "relevance" | "latest" | "top") || undefined,
+      });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  app.get("/scout/hashnode", async (req: Request, res: Response) => {
+    try {
+      const result = await hashnodeSearch({
+        query: q(req),
+        per_page: perPage(req),
+      });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  app.get("/scout/lobsters", async (req: Request, res: Response) => {
+    try {
+      const result = await lobstersSearch({
+        query: q(req),
+        per_page: perPage(req),
+        sort: (req.query.sort as "hot" | "newest") || undefined,
+      });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  app.get("/scout/stackoverflow", async (req: Request, res: Response) => {
+    try {
+      const result = await stackexchangeSearch({
+        query: q(req),
+        per_page: perPage(req),
+        sort: (req.query.sort as "relevance" | "votes" | "activity" | "creation") || undefined,
+        site: (req.query.site as string) || undefined,
+      });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  app.get("/scout/arxiv", async (req: Request, res: Response) => {
+    try {
+      const result = await arxivSearch({
+        query: q(req),
+        per_page: perPage(req),
+        sort: (req.query.sort as "relevance" | "date") || undefined,
+        category: (req.query.category as string) || undefined,
+      });
+      if (result.success && !(await apifyCharge("search-free"))) {
+        return res.status(402).json({ error: "Apify charge limit reached" });
+      }
+      sendResult(res, result);
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });
@@ -634,9 +987,20 @@ async function startServer() {
     console.error(`[scout-mcp] HTTP server listening on port ${config.X402_PORT}`);
     console.error(`[scout-mcp] Network: ${config.NETWORK}`);
     console.error(`[scout-mcp] EVM address: ${config.EVM_ADDRESS}`);
-    console.error(`[scout-mcp] Endpoints: ${Object.keys(routes).length} paid routes`);
+    console.error(`[scout-mcp] Endpoints: ${SCOUT_PATHS.length} routes`);
   });
 }
+
+// ── Graceful shutdown ──────────────────────────────────────
+
+process.on("SIGTERM", () => {
+  console.error("[scout-mcp] SIGTERM received, shutting down");
+  if (Actor) {
+    Actor.exit();
+  } else {
+    process.exit(0);
+  }
+});
 
 startServer().catch((err) => {
   console.error("[scout-mcp] Fatal:", err);

@@ -22,6 +22,13 @@ import { execute as pypiSearch } from "./tools/pypi-search.js";
 import { execute as phSearch } from "./tools/producthunt-search.js";
 import { execute as scoutReport } from "./tools/scout-report.js";
 import { execute as bazaarSearch } from "./tools/bazaar-search.js";
+import { execute as devtoSearch } from "./tools/devto-search.js";
+import { execute as hashnodeSearch } from "./tools/hashnode-search.js";
+import { execute as lobstersSearch } from "./tools/lobsters-search.js";
+import { execute as stackexchangeSearch } from "./tools/stackexchange-search.js";
+import { execute as arxivSearch } from "./tools/arxiv-search.js";
+import { execute as redditSearch } from "./tools/reddit-search.js";
+import { execute as youtubeSearch } from "./tools/youtube-search.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: Record<string, (args: any) => Promise<unknown>> = {
@@ -34,6 +41,13 @@ const TOOLS: Record<string, (args: any) => Promise<unknown>> = {
   producthunt_search: phSearch,
   scout_report: scoutReport,
   bazaar_search: bazaarSearch,
+  devto_search: devtoSearch,
+  hashnode_search: hashnodeSearch,
+  lobsters_search: lobstersSearch,
+  stackexchange_search: stackexchangeSearch,
+  arxiv_search: arxivSearch,
+  reddit_search: redditSearch,
+  youtube_search: youtubeSearch,
 };
 
 async function main() {
