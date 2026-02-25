@@ -1,0 +1,50 @@
+{
+  "title": "Scout Multi-Source Search",
+  "description": "Search across Hacker News, GitHub, npm, PyPI, X/Twitter, Product Hunt, and x402 Bazaar. Use Standby mode for HTTP API access, or run as a batch actor with these inputs.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "query": {
+      "title": "Search Query",
+      "type": "string",
+      "description": "The search term to look up across sources",
+      "editor": "textfield",
+      "prefill": "AI agents"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string",
+      "description": "Which source to search",
+      "editor": "select",
+      "enum": ["hn", "npm", "github", "pypi", "ph", "x", "x402", "devto", "hashnode", "lobsters", "stackoverflow", "arxiv", "scholar", "gitlab", "report", "report-full"],
+      "enumTitles": [
+        "Hacker News",
+        "npm Registry",
+        "GitHub Repos",
+        "PyPI Packages",
+        "Product Hunt",
+        "X/Twitter (paid)",
+        "x402 Bazaar",
+        "Dev.to Articles",
+        "Hashnode Articles",
+        "Lobste.rs",
+        "Stack Overflow",
+        "ArXiv Papers",
+        "Semantic Scholar",
+        "GitLab Projects",
+        "Balanced Report (14 free sources)",
+        "Full Report (all sources, paid)"
+      ],
+      "prefill": "hn"
+    },
+    "per_page": {
+      "title": "Results Per Page",
+      "type": "integer",
+      "description": "Number of results to return (1-50)",
+      "minimum": 1,
+      "maximum": 50,
+      "prefill": 10
+    }
+  },
+  "required": ["query"]
+}

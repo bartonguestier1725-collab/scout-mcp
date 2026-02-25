@@ -1081,6 +1081,70 @@ process.on("SIGTERM", () => {
   }
 });
 
+// ── Apify batch run (non-Standby) ─────────────────────────
+// Apify QA tests run the Actor as a normal run with prefilled input.
+// Detect this and execute batch → pushData → exit instead of starting HTTP server.
+
+if (config.IS_APIFY && process.env.APIFY_META_ORIGIN !== "STANDBY") {
+  console.error(
+    `[scout-mcp] Batch run mode (origin=${process.env.APIFY_META_ORIGIN})`,
+  );
+
+  const input = (await Actor.getInput()) as {
+    query?: string;
+    source?: string;
+    per_page?: number;
+  } | null;
+
+  const query = input?.query || "AI agents";
+  const source = input?.source || "hn";
+  const per_page = input?.per_page || 10;
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const sourceMap: Record<string, (a: any) => Promise<any>> = {
+    hn: (a) => hnSearch({ query: a.query, per_page: a.per_page }),
+    npm: (a) => npmSearch({ query: a.query, per_page: a.per_page }),
+    github: (a) => githubSearch({ query: a.query, per_page: a.per_page }),
+    pypi: (a) => pypiSearch({ query: a.query, per_page: a.per_page }),
+    ph: (a) => phSearch({ query: a.query, per_page: a.per_page }),
+    x: (a) => xSearch({ query: a.query, per_page: a.per_page }),
+    x402: (a) => bazaarSearch({ query: a.query, per_page: a.per_page }),
+    report: (a) =>
+      scoutReport({ query: a.query, focus: "balanced", per_page: a.per_page }),
+    "report-full": (a) =>
+      scoutReport({
+        query: a.query,
+        focus: "comprehensive",
+        per_page: a.per_page,
+      }),
+    // Phase 2 sources
+    devto: (a) => devtoSearch({ query: a.query, per_page: a.per_page }),
+    hashnode: (a) => hashnodeSearch({ query: a.query, per_page: a.per_page }),
+    lobsters: (a) => lobstersSearch({ query: a.query, per_page: a.per_page }),
+    stackoverflow: (a) =>
+      stackexchangeSearch({ query: a.query, per_page: a.per_page }),
+    arxiv: (a) => arxivSearch({ query: a.query, per_page: a.per_page }),
+    scholar: (a) =>
+      semanticScholarSearch({ query: a.query, per_page: a.per_page }),
+    gitlab: (a) => gitlabSearch({ query: a.query, per_page: a.per_page }),
+  };
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  const searchFn = sourceMap[source] || sourceMap.hn;
+  console.error(
+    `[scout-mcp] Executing: source=${source} query="${query}" per_page=${per_page}`,
+  );
+
+  const result = await searchFn({ query, per_page });
+  await Actor.pushData(result);
+
+  console.error("[scout-mcp] Batch run complete, exiting");
+  await Actor.exit();
+  process.exit(0);
+}
+
+// ── Standby mode or local — start HTTP server ────────────
+
 startServer().catch((err) => {
   console.error("[scout-mcp] Fatal:", err);
   process.exit(1);
