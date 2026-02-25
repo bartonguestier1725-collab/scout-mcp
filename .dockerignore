@@ -1,0 +1,10 @@
+.env
+.env.*
+.git
+.gitignore
+node_modules
+build
+*.md
+!README.md
+self_pay.py
+.claude*

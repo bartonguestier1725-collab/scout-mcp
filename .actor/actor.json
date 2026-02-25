@@ -1,0 +1,34 @@
+{
+  "actorSpecification": 1,
+  "name": "scout-multi-source-search",
+  "version": "1.0",
+  "buildTag": "latest",
+  "dockerfile": "./Dockerfile",
+  "input": "./INPUT_SCHEMA.json",
+  "usesStandbyMode": true,
+  "pricingModel": "PAY_PER_EVENT",
+  "pricingPerEvent": {
+    "actorChargeEvents": {
+      "search-free": {
+        "eventTitle": "Free Source Search",
+        "eventDescription": "One search query to HN, GitHub, npm, PyPI, Product Hunt, or Bazaar",
+        "eventPriceUsd": 0.005
+      },
+      "search-x": {
+        "eventTitle": "X/Twitter Search",
+        "eventDescription": "One X/Twitter search via xAI Grok AI (upstream cost ~$0.05)",
+        "eventPriceUsd": 0.10
+      },
+      "report-balanced": {
+        "eventTitle": "Balanced Report",
+        "eventDescription": "Multi-source report from 4 free sources in parallel",
+        "eventPriceUsd": 0.02
+      },
+      "report-full": {
+        "eventTitle": "Comprehensive Report",
+        "eventDescription": "Full 6-source report including X/Twitter search",
+        "eventPriceUsd": 0.15
+      }
+    }
+  }
+}
