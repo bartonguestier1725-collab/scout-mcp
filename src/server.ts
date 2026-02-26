@@ -284,22 +284,22 @@ async function startServer() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const routes: Record<string, any> = {
       "GET /scout/hn": makeRoute(
-        "Search Hacker News stories, comments, and polls via Algolia",
+        "Search Hacker News for tech news, startup funding, and developer discussions. AI agent API for market research and trend analysis",
         PRICE_LOW,
-        { input: { type: "http", queryParams: { q: "x402" } }, output: { type: "json" } },
+        { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
       ),
       "GET /scout/npm": makeRoute(
-        "Search the npm package registry by name, keywords, or description",
+        "Search npm package registry — find JavaScript and TypeScript libraries, frameworks, and developer tools. AI agent API for dependency research",
         PRICE_LOW,
-        { input: { type: "http", queryParams: { q: "mcp" } }, output: { type: "json" } },
+        { input: { type: "http", queryParams: { q: "mcp server" } }, output: { type: "json" } },
       ),
       "GET /scout/github": makeRoute(
-        "Search GitHub repositories by keyword, topic, or description",
+        "Search GitHub repositories — discover open source projects, developer tools, and trending repos. AI agent API for competitive intelligence",
         PRICE_LOW,
-        { input: { type: "http", queryParams: { q: "x402" } }, output: { type: "json" } },
+        { input: { type: "http", queryParams: { q: "AI agent framework" } }, output: { type: "json" } },
       ),
       "GET /scout/github/repo": makeRoute(
-        "Get detailed info about a specific GitHub repository",
+        "Get GitHub repository details — stars, forks, contributors, releases, and license info. AI agent API for open source intelligence",
         PRICE_LOW,
         {
           input: { type: "http", queryParams: { owner: "coinbase", repo: "x402" } },
@@ -307,30 +307,30 @@ async function startServer() {
         },
       ),
       "GET /scout/pypi": makeRoute(
-        "Look up Python packages on PyPI by name",
+        "Search PyPI for Python packages — find libraries, frameworks, and developer tools. AI agent API for Python ecosystem research",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "fastapi" } }, output: { type: "json" } },
       ),
       "GET /scout/ph": makeRoute(
-        "Search Product Hunt for products and launches",
+        "Search Product Hunt for new products, SaaS launches, and developer tools. AI agent API for market research and competitive intelligence",
         PRICE_LOW,
-        { input: { type: "http", queryParams: { q: "ai-agents" } }, output: { type: "json" } },
+        { input: { type: "http", queryParams: { q: "developer-tools" } }, output: { type: "json" } },
       ),
       "GET /scout/x": makeRoute(
-        "Search X/Twitter via xAI Grok with web search (~$0.05 upstream cost)",
+        "Search X (Twitter) for real-time posts, trends, and discussions via xAI Grok. AI agent API for social media intelligence and sentiment analysis",
         PRICE_X,
         {
-          input: { type: "http", queryParams: { q: "x402 protocol" } },
+          input: { type: "http", queryParams: { q: "AI startups" } },
           output: { type: "json" },
         },
       ),
       "GET /scout/x402": makeRoute(
-        "Search x402 Bazaar for AI-agent APIs with micropayment access",
+        "Search x402 Bazaar for AI agent APIs with micropayment access. Discover x402-enabled services and developer tools",
         PRICE_LOW,
-        { input: { type: "http", queryParams: { q: "weather" } }, output: { type: "json" } },
+        { input: { type: "http", queryParams: { q: "search API" } }, output: { type: "json" } },
       ),
       "GET /scout/report": makeRoute(
-        "Multi-source intelligence report (14 free sources: HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Zenn, Qiita, Semantic Scholar, Lemmy, GitLab)",
+        "Multi-source intelligence report — search 14 sources in parallel (HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Semantic Scholar, Lemmy, GitLab). AI agent API for comprehensive market research",
         PRICE_LOW,
         {
           input: { type: "http", queryParams: { q: "MCP servers" } },
@@ -338,42 +338,42 @@ async function startServer() {
         },
       ),
       "GET /scout/report/full": makeRoute(
-        "Comprehensive intelligence report across all 18 sources including X, Product Hunt, Reddit, YouTube, Qiita, Semantic Scholar, Lemmy, and GitLab",
+        "Comprehensive intelligence report — search all 18 sources in parallel including X/Twitter, Product Hunt, Reddit, YouTube. AI agent API for full market research and competitive analysis",
         PRICE_XFULL,
         { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
       ),
       "GET /scout/devto": makeRoute(
-        "Search Dev.to for technical articles and blog posts",
+        "Search Dev.to for developer articles, tutorials, and technical blog posts. AI agent API for developer content and trend research",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "typescript" } }, output: { type: "json" } },
       ),
       "GET /scout/hashnode": makeRoute(
-        "Search Hashnode for technical blog posts",
+        "Search Hashnode for technical blog posts, tutorials, and developer insights. AI agent API for content research and trend monitoring",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "react" } }, output: { type: "json" } },
       ),
       "GET /scout/lobsters": makeRoute(
-        "Search Lobste.rs for curated tech news and discussions",
+        "Search Lobste.rs for curated tech news and developer discussions. AI agent API for trend monitoring and community sentiment",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "rust" } }, output: { type: "json" } },
       ),
       "GET /scout/stackoverflow": makeRoute(
-        "Search Stack Overflow for Q&A",
+        "Search Stack Overflow for developer Q&A, solutions, and best practices. AI agent API for technical knowledge retrieval",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "async await" } }, output: { type: "json" } },
       ),
       "GET /scout/arxiv": makeRoute(
-        "Search ArXiv for academic papers and preprints",
+        "Search ArXiv for academic papers and preprints in AI, machine learning, CS, and mathematics. AI agent API for scientific research",
         PRICE_LOW,
-        { input: { type: "http", queryParams: { q: "transformer" } }, output: { type: "json" } },
+        { input: { type: "http", queryParams: { q: "transformer attention" } }, output: { type: "json" } },
       ),
       "GET /scout/scholar": makeRoute(
-        "Search Semantic Scholar for academic papers (200M+ papers, citation graph)",
+        "Search Semantic Scholar — 200M+ academic papers with citation graph. AI agent API for literature review and research intelligence",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "large language models" } }, output: { type: "json" } },
       ),
       "GET /scout/gitlab": makeRoute(
-        "Search GitLab.com for public projects (enterprise OSS, EU projects)",
+        "Search GitLab for public projects — enterprise open source and DevOps tools. AI agent API for competitive intelligence",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "kubernetes" } }, output: { type: "json" } },
       ),

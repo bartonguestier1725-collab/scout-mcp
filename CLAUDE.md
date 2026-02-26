@@ -228,17 +228,18 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 | `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive, 18ソース) |
 | `GET /openapi.json` | Free | OpenAPI 3.0 spec |
 
-### 棚置き状況（2026-02-21 18:30 全棚完了）
+### 棚置き状況（2026-02-24 v0.3.0 更新）
 
 | プラットフォーム | 状態 |
 |----------------|------|
-| x402 Bazaar | ✅ 10 EP 全登録済み（全EP実支払テスト30/30成功、cron週次自動更新） |
-| x402scan | ✅ 10 EP（discovery 自動で価格反映） |
-| ClawMart | ✅ 10 EP (#398-407) |
+| x402 Bazaar | ✅ 17 EP（selfpay 15EP + X/report-full は除外。cron週次自動更新） |
+| x402scan | ✅ 17 EP（discovery 自動で価格反映） |
+| ClawMart | ✅ 19 EP (#398-407, #419-420, #424-430) |
 | awesome-x402 | ✅ PR #33 Merged (gotobi+weather), PR #38 Merged (scout) |
 | x402 Index | ✅ 提出済み |
-| RelAI | ✅ `/openapi.json` 登録済み |
-| Apiosk | ✅ 登録済み |
+| **Apify Store** | ✅ 公開済み（PPE 4イベント） |
+| RelAI | ⏸ **凍結**（エラー頻発） |
+| Apiosk | ⏸ **凍結**（手動ポチポチ面倒） |
 
 ### サービス管理
 
