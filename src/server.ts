@@ -273,10 +273,22 @@ async function startServer() {
       description: string,
       price: string,
       bazaarInfo?: Record<string, unknown>,
+      sampleData?: Record<string, unknown>,
     ) => ({
       accepts: [makeOption(price)],
       description,
       mimeType: "application/json",
+      ...(sampleData
+        ? {
+            unpaidResponseBody: () => ({
+              contentType: "application/json",
+              body: {
+                _notice: `Payment required (${price} USDC on Base). Sample response below.`,
+                ...sampleData,
+              },
+            }),
+          }
+        : {}),
       ...(bazaarInfo ? { extensions: { bazaar: { info: bazaarInfo } } } : {}),
     });
 
@@ -287,16 +299,19 @@ async function startServer() {
         "Search Hacker News for tech news, startup funding, and developer discussions. AI agent API for market research and trend analysis",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
+        { query: "AI agents", results: [{ title: "Show HN: AI Agent Framework", url: "https://example.com", points: 142, comments: 38 }], source: "hackernews", count: 1 },
       ),
       "GET /scout/npm": makeRoute(
         "Search npm package registry — find JavaScript and TypeScript libraries, frameworks, and developer tools. AI agent API for dependency research",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "mcp server" } }, output: { type: "json" } },
+        { query: "mcp server", results: [{ name: "@modelcontextprotocol/sdk", version: "1.26.0", description: "MCP SDK", quality: 0.95 }], source: "npm", count: 1 },
       ),
       "GET /scout/github": makeRoute(
         "Search GitHub repositories — discover open source projects, developer tools, and trending repos. AI agent API for competitive intelligence",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "AI agent framework" } }, output: { type: "json" } },
+        { query: "AI agent framework", results: [{ name: "langchain", full_name: "langchain-ai/langchain", stars: 95000, language: "Python" }], source: "github", count: 1 },
       ),
       "GET /scout/github/repo": makeRoute(
         "Get GitHub repository details — stars, forks, contributors, releases, and license info. AI agent API for open source intelligence",
@@ -305,16 +320,19 @@ async function startServer() {
           input: { type: "http", queryParams: { owner: "coinbase", repo: "x402" } },
           output: { type: "json" },
         },
+        { owner: "coinbase", repo: "x402", stars: 1200, forks: 85, language: "TypeScript", license: "Apache-2.0" },
       ),
       "GET /scout/pypi": makeRoute(
         "Search PyPI for Python packages — find libraries, frameworks, and developer tools. AI agent API for Python ecosystem research",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "fastapi" } }, output: { type: "json" } },
+        { query: "fastapi", results: [{ name: "fastapi", version: "0.115.0", summary: "FastAPI framework" }], source: "pypi", count: 1 },
       ),
       "GET /scout/ph": makeRoute(
         "Search Product Hunt for new products, SaaS launches, and developer tools. AI agent API for market research and competitive intelligence",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "developer-tools" } }, output: { type: "json" } },
+        { query: "developer-tools", results: [{ name: "Cursor", tagline: "AI code editor", votes: 1500, topics: ["developer-tools", "ai"] }], source: "producthunt", count: 1 },
       ),
       "GET /scout/x": makeRoute(
         "Search X (Twitter) for real-time posts, trends, and discussions via xAI Grok. AI agent API for social media intelligence and sentiment analysis",
@@ -323,11 +341,13 @@ async function startServer() {
           input: { type: "http", queryParams: { q: "AI startups" } },
           output: { type: "json" },
         },
+        { query: "AI startups", results: [{ text: "Exciting developments in AI agent infrastructure...", author: "@techfounder", likes: 234, retweets: 89, url: "https://x.com/techfounder/status/example" }], source: "x", count: 1 },
       ),
       "GET /scout/x402": makeRoute(
         "Search x402 Bazaar for AI agent APIs with micropayment access. Discover x402-enabled services and developer tools",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "search API" } }, output: { type: "json" } },
+        { query: "search API", results: [{ url: "https://scout.hugen.tokyo/scout/hn", price: "$0.001", network: "Base" }], source: "bazaar", count: 1 },
       ),
       "GET /scout/report": makeRoute(
         "Multi-source intelligence report — search 14 sources in parallel (HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Semantic Scholar, Lemmy, GitLab). AI agent API for comprehensive market research",
@@ -336,46 +356,55 @@ async function startServer() {
           input: { type: "http", queryParams: { q: "MCP servers" } },
           output: { type: "json" },
         },
+        { query: "MCP servers", focus: "balanced", sources_searched: 14, results: { hackernews: { count: 5 }, github: { count: 5 }, npm: { count: 5 } }, total_results: 70 },
       ),
       "GET /scout/report/full": makeRoute(
         "Comprehensive intelligence report — search all 18 sources in parallel including X/Twitter, Product Hunt, Reddit, YouTube. AI agent API for full market research and competitive analysis",
         PRICE_XFULL,
         { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
+        { query: "AI agents", focus: "comprehensive", sources_searched: 18, results: { hackernews: { count: 5 }, github: { count: 5 }, x: { count: 5 }, producthunt: { count: 5 } }, total_results: 90 },
       ),
       "GET /scout/devto": makeRoute(
         "Search Dev.to for developer articles, tutorials, and technical blog posts. AI agent API for developer content and trend research",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "typescript" } }, output: { type: "json" } },
+        { query: "typescript", results: [{ title: "Advanced TypeScript Patterns", reactions: 245, reading_time: 8, tags: ["typescript"] }], source: "devto", count: 1 },
       ),
       "GET /scout/hashnode": makeRoute(
         "Search Hashnode for technical blog posts, tutorials, and developer insights. AI agent API for content research and trend monitoring",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "react" } }, output: { type: "json" } },
+        { query: "react", results: [{ title: "React Server Components Deep Dive", reactions: 180, reading_time: 12 }], source: "hashnode", count: 1 },
       ),
       "GET /scout/lobsters": makeRoute(
         "Search Lobste.rs for curated tech news and developer discussions. AI agent API for trend monitoring and community sentiment",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "rust" } }, output: { type: "json" } },
+        { query: "rust", results: [{ title: "Rust async patterns", score: 45, comments: 12, tags: ["rust", "programming"] }], source: "lobsters", count: 1 },
       ),
       "GET /scout/stackoverflow": makeRoute(
         "Search Stack Overflow for developer Q&A, solutions, and best practices. AI agent API for technical knowledge retrieval",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "async await" } }, output: { type: "json" } },
+        { query: "async await", results: [{ title: "How to use async/await in JavaScript", score: 1250, answers: 8, accepted: true }], source: "stackoverflow", count: 1 },
       ),
       "GET /scout/arxiv": makeRoute(
         "Search ArXiv for academic papers and preprints in AI, machine learning, CS, and mathematics. AI agent API for scientific research",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "transformer attention" } }, output: { type: "json" } },
+        { query: "transformer attention", results: [{ title: "Attention Is All You Need", authors: ["Vaswani et al."], categories: ["cs.CL"] }], source: "arxiv", count: 1 },
       ),
       "GET /scout/scholar": makeRoute(
         "Search Semantic Scholar — 200M+ academic papers with citation graph. AI agent API for literature review and research intelligence",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "large language models" } }, output: { type: "json" } },
+        { query: "large language models", results: [{ title: "Language Models are Few-Shot Learners", citations: 15000, year: 2020 }], source: "semantic_scholar", count: 1 },
       ),
       "GET /scout/gitlab": makeRoute(
         "Search GitLab for public projects — enterprise open source and DevOps tools. AI agent API for competitive intelligence",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "kubernetes" } }, output: { type: "json" } },
+        { query: "kubernetes", results: [{ name: "gitlab-ci-kubernetes", stars: 850, language: "Go" }], source: "gitlab", count: 1 },
       ),
     };
 
