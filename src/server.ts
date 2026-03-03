@@ -22,6 +22,9 @@ import { createFacilitatorConfig } from "@coinbase/x402";
 
 import { config } from "./config.js";
 
+// Route handlers
+import { handleResearch, handleResearchDeep } from "./routes/research.js";
+
 // Tool imports
 import { execute as hnSearch } from "./tools/hackernews-search.js";
 import { execute as npmSearch } from "./tools/npm-search.js";
@@ -229,6 +232,7 @@ async function startServer() {
   // --- Express app ---
   const app = express();
   app.set("trust proxy", 1); // Cloudflare Tunnel terminates SSL
+  app.use(express.json({ limit: "16kb" })); // POST body parsing for /research endpoints
 
   if (config.IS_APIFY) {
     // Apify Standby: PPE handles billing, no x402 needed
@@ -347,7 +351,7 @@ async function startServer() {
         "Search x402 Bazaar for AI agent APIs with micropayment access. Discover x402-enabled services and developer tools",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "search API" } }, output: { type: "json" } },
-        { query: "search API", results: [{ url: "https://scout.hugen.tokyo/scout/hn", price: "$0.001", network: "Base" }], source: "bazaar", count: 1 },
+        { query: "search API", results: [{ url: "https://scout.hugen.tokyo/scout/hn", price: "$0.005", network: "Base" }], source: "bazaar", count: 1 },
       ),
       "GET /scout/report": makeRoute(
         "Multi-source intelligence report — search 14 sources in parallel (HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Semantic Scholar, Lemmy, GitLab). AI agent API for comprehensive market research",
@@ -405,6 +409,48 @@ async function startServer() {
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "kubernetes" } }, output: { type: "json" } },
         { query: "kubernetes", results: [{ name: "gitlab-ci-kubernetes", stars: 850, language: "Go" }], source: "gitlab", count: 1 },
+      ),
+      "POST /scout/research": makeRoute(
+        "AI-synthesized intelligence report — searches 14 sources in parallel, then synthesizes findings with Gemini AI. Returns structured analysis with summary, key findings, sentiment, trends, and recommendations. Premium deep research endpoint",
+        config.PRICE_RESEARCH,
+        {
+          input: { type: "http", method: "POST", body: { query: "AI agent frameworks", per_page: 5, focus: "technical" } },
+          output: { type: "json" },
+        },
+        {
+          query: "AI agent frameworks",
+          depth: "balanced",
+          synthesis: {
+            summary: "AI agent frameworks are rapidly evolving...",
+            key_findings: ["LangChain leads in GitHub stars", "CrewAI gaining traction"],
+            sources_analyzed: 12,
+            sentiment: "positive",
+            trends: ["Multi-agent orchestration", "Tool-use patterns"],
+            recommendations: ["Evaluate LangGraph for complex workflows"],
+          },
+          meta: { model: "gemini-2.5-flash-lite", sources_queried: 14, sources_responded: 12, processing_time_ms: 3500 },
+        },
+      ),
+      "POST /scout/research/deep": makeRoute(
+        "Comprehensive AI-synthesized report — searches all 18 sources (including X/Twitter) in parallel, then synthesizes with Gemini AI. Maximum coverage deep research endpoint for thorough market and technical analysis",
+        config.PRICE_RESEARCH_DEEP,
+        {
+          input: { type: "http", method: "POST", body: { query: "x402 protocol adoption", per_page: 5, focus: "market" } },
+          output: { type: "json" },
+        },
+        {
+          query: "x402 protocol adoption",
+          depth: "comprehensive",
+          synthesis: {
+            summary: "The x402 protocol is in early adoption phase...",
+            key_findings: ["Growing Bazaar ecosystem", "Coinbase backing"],
+            sources_analyzed: 16,
+            sentiment: "positive",
+            trends: ["AI agent micropayments", "Decentralized API economy"],
+            recommendations: ["Monitor Bazaar growth metrics"],
+          },
+          meta: { model: "gemini-2.5-flash-lite", sources_queried: 18, sources_responded: 16, processing_time_ms: 5200 },
+        },
       ),
     };
 
@@ -496,6 +542,8 @@ async function startServer() {
         x_search: config.PRICE_X,
         report_full: config.PRICE_XFULL,
         low: config.PRICE_LOW,
+        research: config.PRICE_RESEARCH,
+        research_deep: config.PRICE_RESEARCH_DEEP,
       },
       xai_cost_health: {
         ...costHealth,
@@ -514,6 +562,7 @@ async function startServer() {
     "/scout/devto", "/scout/hashnode", "/scout/lobsters",
     "/scout/stackoverflow", "/scout/arxiv",
     "/scout/scholar", "/scout/gitlab",
+    "/scout/research", "/scout/research/deep",
   ];
 
   app.get("/.well-known/x402", (req: Request, res: Response) => {
@@ -526,20 +575,23 @@ async function startServer() {
         "# Scout MCP \u2014 Multi-source Intelligence API\n\n" +
         "Search across HN, GitHub, npm, PyPI, X, Product Hunt, and x402 Bazaar.\n\n" +
         "## Endpoints\n" +
-        "- `GET /scout/hn?q=<query>` \u2014 Hacker News ($0.001)\n" +
-        "- `GET /scout/npm?q=<query>` \u2014 npm registry ($0.001)\n" +
-        "- `GET /scout/github?q=<query>` \u2014 GitHub repos ($0.001)\n" +
-        "- `GET /scout/github/repo?owner=<o>&repo=<r>` \u2014 GitHub repo detail ($0.001)\n" +
-        "- `GET /scout/pypi?q=<query>` \u2014 PyPI packages ($0.001)\n" +
-        "- `GET /scout/ph?q=<query>` \u2014 Product Hunt ($0.001)\n" +
+        "- `GET /scout/hn?q=<query>` \u2014 Hacker News ($0.005)\n" +
+        "- `GET /scout/npm?q=<query>` \u2014 npm registry ($0.005)\n" +
+        "- `GET /scout/github?q=<query>` \u2014 GitHub repos ($0.005)\n" +
+        "- `GET /scout/github/repo?owner=<o>&repo=<r>` \u2014 GitHub repo detail ($0.005)\n" +
+        "- `GET /scout/pypi?q=<query>` \u2014 PyPI packages ($0.005)\n" +
+        "- `GET /scout/ph?q=<query>` \u2014 Product Hunt ($0.005)\n" +
         "- `GET /scout/x?q=<query>` \u2014 X/Twitter ($0.20)\n" +
-        "- `GET /scout/x402?q=<query>` \u2014 x402 Bazaar search ($0.001)\n" +
-        "- `GET /scout/scholar?q=<query>` \u2014 Semantic Scholar papers ($0.001)\n" +
-        "- `GET /scout/gitlab?q=<query>` \u2014 GitLab projects ($0.001)\n" +
-        "- `GET /scout/report?q=<query>` \u2014 Balanced report ($0.001)\n" +
-        "- `GET /scout/report/full?q=<query>` \u2014 Full report ($0.25)\n\n" +
+        "- `GET /scout/x402?q=<query>` \u2014 x402 Bazaar search ($0.005)\n" +
+        "- `GET /scout/scholar?q=<query>` \u2014 Semantic Scholar papers ($0.005)\n" +
+        "- `GET /scout/gitlab?q=<query>` \u2014 GitLab projects ($0.005)\n" +
+        "- `GET /scout/report?q=<query>` \u2014 Balanced report ($0.005)\n" +
+        "- `GET /scout/report/full?q=<query>` \u2014 Full report ($0.25)\n" +
+        "- `POST /scout/research` \u2014 AI-synthesized report, 14 sources ($0.25)\n" +
+        "- `POST /scout/research/deep` \u2014 AI-synthesized report, 18 sources ($0.50)\n\n" +
         "## Pricing\n" +
-        "Free sources: $0.001/request. X search: $0.20/request. Full report: $0.25/request. USDC on Base.\n\n" +
+        "Standard sources: $0.005/request. X search: $0.20/request. Full report: $0.25/request. " +
+        "AI Research: $0.25 (balanced) / $0.50 (comprehensive). USDC on Base.\n\n" +
         "## Contact\n" +
         "GitHub: https://github.com/bartonguestier1725-collab/scout-mcp",
     });
@@ -571,7 +623,7 @@ async function startServer() {
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Number of results to return (1-50)" },
               { name: "tag", in: "query", schema: { type: "string", enum: ["story", "comment", "poll", "show_hn", "ask_hn"] }, description: "Filter by content type" },
             ],
-            responses: { "200": { description: "Search results with title, URL, points, comments, author, and date" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results with title, URL, points, comments, author, and date" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/npm": {
@@ -583,7 +635,7 @@ async function startServer() {
               { name: "q", in: "query", required: true, schema: { type: "string", example: "mcp server" }, description: "Package name, keywords, or description to search" },
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Number of results to return (1-50)" },
             ],
-            responses: { "200": { description: "Search results with package name, version, scores, and links" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results with package name, version, scores, and links" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/github": {
@@ -597,7 +649,7 @@ async function startServer() {
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Number of results to return (1-50)" },
               { name: "language", in: "query", schema: { type: "string", example: "typescript" }, description: "Filter by programming language" },
             ],
-            responses: { "200": { description: "Search results with repo name, stars, forks, language, topics, and license" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results with repo name, stars, forks, language, topics, and license" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/github/repo": {
@@ -611,7 +663,7 @@ async function startServer() {
               { name: "include_contributors", in: "query", schema: { type: "boolean", default: false }, description: "Include top 10 contributors" },
               { name: "include_releases", in: "query", schema: { type: "boolean", default: false }, description: "Include 5 most recent releases" },
             ],
-            responses: { "200": { description: "Repository details with stars, forks, language, topics, license, contributors, and releases" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Repository details with stars, forks, language, topics, license, contributors, and releases" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/pypi": {
@@ -623,7 +675,7 @@ async function startServer() {
               { name: "q", in: "query", required: true, schema: { type: "string", example: "fastapi" }, description: "Package name or approximate name to look up" },
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 5 }, description: "Number of results to return (1-20)" },
             ],
-            responses: { "200": { description: "Search results with package name, version, summary, license, and links" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results with package name, version, summary, license, and links" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/ph": {
@@ -636,7 +688,7 @@ async function startServer() {
               { name: "order", in: "query", schema: { type: "string", enum: ["VOTES", "NEWEST"], default: "VOTES" }, description: "Sort by most votes or newest" },
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 }, description: "Number of results to return (1-20)" },
             ],
-            responses: { "200": { description: "Search results with product name, tagline, votes, comments, topics, and makers" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results with product name, tagline, votes, comments, topics, and makers" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/x": {
@@ -661,7 +713,7 @@ async function startServer() {
               { name: "q", in: "query", required: true, schema: { type: "string", example: "weather" }, description: "Search query (matched against API URL and description)" },
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 50, default: 10 }, description: "Number of results to return (1-50)" },
             ],
-            responses: { "200": { description: "Search results with API URL, description, price, network, and relevance score" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results with API URL, description, price, network, and relevance score" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/report": {
@@ -673,7 +725,7 @@ async function startServer() {
               { name: "q", in: "query", required: true, schema: { type: "string", example: "MCP servers" }, description: "Search query to scout across sources" },
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 5 }, description: "Results per source (1-20)" },
             ],
-            responses: { "200": { description: "Multi-source report with results from each source and summary statistics" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Multi-source report with results from each source and summary statistics" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/report/full": {
@@ -698,7 +750,7 @@ async function startServer() {
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 30, default: 10 }, description: "Results per page" },
               { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "latest", "top"], default: "relevance" }, description: "Sort order" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/hashnode": {
@@ -710,7 +762,7 @@ async function startServer() {
               { name: "q", in: "query", required: true, schema: { type: "string", example: "react" }, description: "Search query" },
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 }, description: "Results per page" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/lobsters": {
@@ -723,7 +775,7 @@ async function startServer() {
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 25, default: 10 }, description: "Results per page" },
               { name: "sort", in: "query", schema: { type: "string", enum: ["hot", "newest"], default: "hot" }, description: "Sort order" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/stackoverflow": {
@@ -737,7 +789,7 @@ async function startServer() {
               { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "votes", "activity", "creation"], default: "relevance" }, description: "Sort order" },
               { name: "site", in: "query", schema: { type: "string", default: "stackoverflow" }, description: "StackExchange site" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/arxiv": {
@@ -751,7 +803,7 @@ async function startServer() {
               { name: "sort", in: "query", schema: { type: "string", enum: ["relevance", "date"], default: "relevance" }, description: "Sort order" },
               { name: "category", in: "query", schema: { type: "string", example: "cs.AI" }, description: "ArXiv category filter" },
             ],
-            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/scholar": {
@@ -765,7 +817,7 @@ async function startServer() {
               { name: "year", in: "query", schema: { type: "string", example: "2024" }, description: "Filter by year or range (e.g. '2024', '2020-2024')" },
               { name: "fields_of_study", in: "query", schema: { type: "string", example: "Computer Science" }, description: "Filter by field" },
             ],
-            responses: { "200": { description: "Search results with paper title, abstract, citations, authors, and PDF links" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results with paper title, abstract, citations, authors, and PDF links" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
           },
         },
         "/scout/gitlab": {
@@ -778,7 +830,65 @@ async function startServer() {
               { name: "per_page", in: "query", schema: { type: "integer", minimum: 1, maximum: 20, default: 10 }, description: "Results per page" },
               { name: "sort", in: "query", schema: { type: "string", enum: ["stars", "updated", "name"], default: "stars" }, description: "Sort order" },
             ],
-            responses: { "200": { description: "Search results with project name, stars, forks, topics, and activity" }, "402": { description: "Payment required ($0.001)" }, "502": { description: "Upstream source error" } },
+            responses: { "200": { description: "Search results with project name, stars, forks, topics, and activity" }, "402": { description: "Payment required ($0.005)" }, "502": { description: "Upstream source error" } },
+          },
+        },
+        "/scout/research": {
+          post: {
+            summary: "AI-synthesized intelligence report (14 sources)",
+            description: "Searches 14 sources in parallel (HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Semantic Scholar, Lemmy, GitLab, Zenn, Qiita), then synthesizes findings using Gemini AI. Returns structured analysis with summary, key findings, sentiment, trends, and recommendations alongside raw search results.",
+            operationId: "research",
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["query"],
+                    properties: {
+                      query: { type: "string", example: "AI agent frameworks comparison", description: "Research query (max 500 chars)" },
+                      per_page: { type: "integer", minimum: 1, maximum: 20, default: 5, description: "Results per source" },
+                      focus: { type: "string", enum: ["technical", "market", "sentiment"], default: "technical", description: "Analysis focus: technical (architecture, patterns), market (adoption, competition), sentiment (community opinions)" },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              "200": { description: "Synthesized report with AI analysis and raw results" },
+              "400": { description: "Invalid request body" },
+              "402": { description: "Payment required ($0.25)" },
+              "502": { description: "All sources failed" },
+            },
+          },
+        },
+        "/scout/research/deep": {
+          post: {
+            summary: "Comprehensive AI-synthesized report (all 18 sources)",
+            description: "Searches all 18 sources in parallel including X/Twitter, Product Hunt, Reddit, and YouTube, then synthesizes findings using Gemini AI. Maximum coverage for thorough market and technical analysis.",
+            operationId: "researchDeep",
+            requestBody: {
+              required: true,
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["query"],
+                    properties: {
+                      query: { type: "string", example: "x402 protocol adoption", description: "Research query (max 500 chars)" },
+                      per_page: { type: "integer", minimum: 1, maximum: 20, default: 5, description: "Results per source" },
+                      focus: { type: "string", enum: ["technical", "market", "sentiment"], default: "technical", description: "Analysis focus" },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              "200": { description: "Comprehensive synthesized report with AI analysis" },
+              "400": { description: "Invalid request body" },
+              "402": { description: "Payment required ($0.50)" },
+              "502": { description: "All sources failed" },
+            },
           },
         },
       },
@@ -1084,6 +1194,34 @@ async function startServer() {
         return res.status(402).json({ error: "Apify charge limit reached" });
       }
       sendResult(res, result);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  // ── Deep Research endpoints (POST) ──────────────────────
+
+  app.post("/scout/research", async (req: Request, res: Response) => {
+    try {
+      await handleResearch(req, res);
+    } catch (err) {
+      stats.errors_total++;
+      res.status(500).json({ error: sanitizeError(err) });
+    }
+  });
+
+  app.post("/scout/research/deep", async (req: Request, res: Response) => {
+    try {
+      // RapidAPI high-cost protection (same as /scout/x and /report/full)
+      const xBlock = checkRapidApiXLimit(req);
+      if (xBlock) return res.status(xBlock.status).json(xBlock.body);
+
+      stats.x_calls++;
+      await handleResearchDeep(req, res);
+      // Fallback xAI cost tracking (report result is consumed inside handler)
+      stats.x_cost_estimate += config.XAI_COST_PER_CALL;
+      stats.x_cost_per_call_sum += config.XAI_COST_PER_CALL;
     } catch (err) {
       stats.errors_total++;
       res.status(500).json({ error: sanitizeError(err) });

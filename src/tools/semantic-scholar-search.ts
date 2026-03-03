@@ -66,7 +66,7 @@ export async function execute(args: {
       headers["x-api-key"] = s2Key;
     }
 
-    const res = await safeFetchJson<S2Response>(url, { headers });
+    const res = await safeFetchJson<S2Response>(url, { headers, retries: 2 });
 
     const items = (res.data || []).map((p) => ({
       id: p.paperId,

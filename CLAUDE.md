@@ -209,23 +209,25 @@ stdout に 1 バイトでもゴミを流すと JSON-RPC が壊れる。
 |-------|------|--------|
 | `GET /health` | Free | — |
 | `GET /.well-known/x402` | Free | — |
-| `GET /scout/hn?q=` | $0.001 | hackernews_search |
-| `GET /scout/npm?q=` | $0.001 | npm_search |
-| `GET /scout/github?q=` | $0.001 | github_search |
-| `GET /scout/github/repo?owner=&repo=` | $0.001 | github_repo_info |
-| `GET /scout/pypi?q=` | $0.001 | pypi_search |
-| `GET /scout/ph?q=` | $0.001 | producthunt_search |
+| `GET /scout/hn?q=` | $0.005 | hackernews_search |
+| `GET /scout/npm?q=` | $0.005 | npm_search |
+| `GET /scout/github?q=` | $0.005 | github_search |
+| `GET /scout/github/repo?owner=&repo=` | $0.005 | github_repo_info |
+| `GET /scout/pypi?q=` | $0.005 | pypi_search |
+| `GET /scout/ph?q=` | $0.005 | producthunt_search |
 | `GET /scout/x?q=` | $0.20 | x_search |
-| `GET /scout/x402?q=` | $0.001 | bazaar_search |
-| `GET /scout/devto?q=` | $0.001 | devto_search |
-| `GET /scout/hashnode?q=` | $0.001 | hashnode_search |
-| `GET /scout/lobsters?q=` | $0.001 | lobsters_search |
-| `GET /scout/stackoverflow?q=` | $0.001 | stackexchange_search |
-| `GET /scout/arxiv?q=` | $0.001 | arxiv_search |
-| `GET /scout/scholar?q=` | $0.001 | semantic_scholar_search |
-| `GET /scout/gitlab?q=` | $0.001 | gitlab_search |
-| `GET /scout/report?q=` | $0.001 | scout_report (balanced, 14ソース) |
+| `GET /scout/x402?q=` | $0.005 | bazaar_search |
+| `GET /scout/devto?q=` | $0.005 | devto_search |
+| `GET /scout/hashnode?q=` | $0.005 | hashnode_search |
+| `GET /scout/lobsters?q=` | $0.005 | lobsters_search |
+| `GET /scout/stackoverflow?q=` | $0.005 | stackexchange_search |
+| `GET /scout/arxiv?q=` | $0.005 | arxiv_search |
+| `GET /scout/scholar?q=` | $0.005 | semantic_scholar_search |
+| `GET /scout/gitlab?q=` | $0.005 | gitlab_search |
+| `GET /scout/report?q=` | $0.005 | scout_report (balanced, 14ソース) |
 | `GET /scout/report/full?q=` | $0.25 | scout_report (comprehensive, 18ソース) |
+| `POST /scout/research` | $0.25 | Deep Research (balanced + Gemini AI合成) |
+| `POST /scout/research/deep` | $0.50 | Deep Research (comprehensive + Gemini AI合成) |
 | `GET /openapi.json` | Free | OpenAPI 3.0 spec |
 
 ### 棚置き状況（2026-02-24 v0.3.0 更新）
@@ -269,10 +271,13 @@ npm run build && systemctl --user restart x402-scout
 
 ```bash
 # ~/etc/x402/scout.env または .env に追加
-PRICE_X=$0.20         # /scout/x の価格
-PRICE_XFULL=$0.25     # /scout/report/full の価格
-PRICE_LOW=$0.001      # その他の価格
-XAI_COST_PER_CALL=0.05  # xAI 平均コスト（2026-02-22 ダッシュボード実測確定）
+PRICE_X=$0.20              # /scout/x の価格
+PRICE_XFULL=$0.25          # /scout/report/full の価格
+PRICE_LOW=$0.005           # 標準EP の価格（2026-03-03 値上げ: $0.001→$0.005）
+PRICE_RESEARCH=$0.25       # POST /scout/research の価格
+PRICE_RESEARCH_DEEP=$0.50  # POST /scout/research/deep の価格
+XAI_COST_PER_CALL=0.05     # xAI 平均コスト（2026-02-22 ダッシュボード実測確定）
+GEMINI_API_KEY=            # Gemini 2.0 Flash-Lite（Deep Research 合成用）
 ```
 
 変更後: `systemctl --user restart x402-scout`

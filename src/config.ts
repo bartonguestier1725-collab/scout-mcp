@@ -49,10 +49,15 @@ export const config = {
   CDP_API_KEY_ID: process.env.CDP_API_KEY_ID ?? "",
   CDP_API_KEY_SECRET: process.env.CDP_API_KEY_SECRET ?? "",
 
+  // Gemini (Deep Research synthesis)
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "",
+
   // Pricing (env-configurable for instant adjustment without code change)
-  PRICE_LOW: process.env.PRICE_LOW ?? "$0.001",
+  PRICE_LOW: process.env.PRICE_LOW ?? "$0.005",
   PRICE_X: process.env.PRICE_X ?? "$0.20",
   PRICE_XFULL: process.env.PRICE_XFULL ?? "$0.25",
+  PRICE_RESEARCH: process.env.PRICE_RESEARCH ?? "$0.25",
+  PRICE_RESEARCH_DEEP: process.env.PRICE_RESEARCH_DEEP ?? "$0.50",
   XAI_COST_PER_CALL: Number(process.env.XAI_COST_PER_CALL) || 0.05,
 
   // RapidAPI proxy authentication (optional — empty = disabled)
