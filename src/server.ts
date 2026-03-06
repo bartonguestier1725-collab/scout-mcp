@@ -17,6 +17,8 @@ import {
 } from "@x402/core/server";
 import type { Network } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { ExactSvmScheme } from "@x402/svm/exact/server";
+import { SOLANA_MAINNET_CAIP2 } from "@x402/svm";
 import { bazaarResourceServerExtension } from "@x402/extensions";
 import { createFacilitatorConfig } from "@coinbase/x402";
 
@@ -179,11 +181,15 @@ function trackXCostFromReport(result: ToolResult): void {
   }
 }
 
+// NOTE: x_calls counter includes MCP-mode calls (no x402 revenue).
+// A past incident inflated avg cost when an external AI used MCP instead of x402.
+// The actual x402 margin is healthy (~75%) — verify on xAI dashboard, not here.
 function getXCostHealth(): {
   avg_cost_per_call: number;
   configured_price: string;
   margin_pct: number;
   alert: boolean;
+  note: string;
 } {
   const avg = stats.x_calls > 0
     ? stats.x_cost_per_call_sum / stats.x_calls
@@ -195,6 +201,7 @@ function getXCostHealth(): {
     configured_price: config.PRICE_X,
     margin_pct: Math.round(margin),
     alert: margin < 40, // Alert when margin drops below 40%
+    note: "Includes MCP-mode calls (no revenue). Check xAI dashboard for true x402 margin.",
   };
 }
 
@@ -259,6 +266,14 @@ async function startServer() {
     const facilitatorClient = new HTTPFacilitatorClient(facilitatorConfig);
     const resourceServer = new x402ResourceServer(facilitatorClient);
     resourceServer.register(network, new ExactEvmScheme());
+
+    // Solana support (Dexter market — activated by SOLANA_PAY_TO env var)
+    const SOLANA_PAY_TO = config.SOLANA_PAY_TO;
+    if (SOLANA_PAY_TO) {
+      resourceServer.register(SOLANA_MAINNET_CAIP2, new ExactSvmScheme());
+      console.error(`[scout-mcp] Solana scheme registered (payTo=${SOLANA_PAY_TO.slice(0, 8)}...)`);
+    }
+
     resourceServer.registerExtension(bazaarResourceServerExtension);
 
     // --- Payment options (env-configurable via config.ts) ---
@@ -266,12 +281,27 @@ async function startServer() {
     const PRICE_X = config.PRICE_X;
     const PRICE_XFULL = config.PRICE_XFULL;
 
-    const makeOption = (price: string) => ({
+    const makeEvmOption = (price: string) => ({
       scheme: "exact" as const,
       payTo: config.EVM_ADDRESS,
       price,
       network,
     });
+
+    const solanaNetwork = SOLANA_MAINNET_CAIP2 as Network;
+
+    const makeSolOption = (price: string) => ({
+      scheme: "exact" as const,
+      payTo: SOLANA_PAY_TO,
+      price,
+      network: solanaNetwork,
+    });
+
+    const makeAccepts = (price: string) => {
+      const accepts = [makeEvmOption(price)];
+      if (SOLANA_PAY_TO) accepts.push(makeSolOption(price));
+      return accepts;
+    };
 
     const makeRoute = (
       description: string,
@@ -279,7 +309,7 @@ async function startServer() {
       bazaarInfo?: Record<string, unknown>,
       sampleData?: Record<string, unknown>,
     ) => ({
-      accepts: [makeOption(price)],
+      accepts: makeAccepts(price),
       description,
       mimeType: "application/json",
       ...(sampleData
@@ -300,25 +330,25 @@ async function startServer() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const routes: Record<string, any> = {
       "GET /scout/hn": makeRoute(
-        "Search Hacker News for tech news, startup funding, and developer discussions. AI agent API for market research and trend analysis",
+        "Search Hacker News for tech news, startup funding, and developer discussions. AI agent API for market research and trend analysis. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
         { query: "AI agents", results: [{ title: "Show HN: AI Agent Framework", url: "https://example.com", points: 142, comments: 38 }], source: "hackernews", count: 1 },
       ),
       "GET /scout/npm": makeRoute(
-        "Search npm package registry — find JavaScript and TypeScript libraries, frameworks, and developer tools. AI agent API for dependency research",
+        "Search npm package registry — find JavaScript and TypeScript libraries, frameworks, and developer tools. AI agent API for dependency research. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "mcp server" } }, output: { type: "json" } },
         { query: "mcp server", results: [{ name: "@modelcontextprotocol/sdk", version: "1.26.0", description: "MCP SDK", quality: 0.95 }], source: "npm", count: 1 },
       ),
       "GET /scout/github": makeRoute(
-        "Search GitHub repositories — discover open source projects, developer tools, and trending repos. AI agent API for competitive intelligence",
+        "Search GitHub repositories — discover open source projects, developer tools, and trending repos. AI agent API for competitive intelligence. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "AI agent framework" } }, output: { type: "json" } },
         { query: "AI agent framework", results: [{ name: "langchain", full_name: "langchain-ai/langchain", stars: 95000, language: "Python" }], source: "github", count: 1 },
       ),
       "GET /scout/github/repo": makeRoute(
-        "Get GitHub repository details — stars, forks, contributors, releases, and license info. AI agent API for open source intelligence",
+        "Get GitHub repository details — stars, forks, contributors, releases, and license info. AI agent API for open source intelligence. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         {
           input: { type: "http", queryParams: { owner: "coinbase", repo: "x402" } },
@@ -327,19 +357,19 @@ async function startServer() {
         { owner: "coinbase", repo: "x402", stars: 1200, forks: 85, language: "TypeScript", license: "Apache-2.0" },
       ),
       "GET /scout/pypi": makeRoute(
-        "Search PyPI for Python packages — find libraries, frameworks, and developer tools. AI agent API for Python ecosystem research",
+        "Search PyPI for Python packages — find libraries, frameworks, and developer tools. AI agent API for Python ecosystem research. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "fastapi" } }, output: { type: "json" } },
         { query: "fastapi", results: [{ name: "fastapi", version: "0.115.0", summary: "FastAPI framework" }], source: "pypi", count: 1 },
       ),
       "GET /scout/ph": makeRoute(
-        "Search Product Hunt for new products, SaaS launches, and developer tools. AI agent API for market research and competitive intelligence",
+        "Search Product Hunt for new products, SaaS launches, and developer tools. AI agent API for market research and competitive intelligence. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "developer-tools" } }, output: { type: "json" } },
         { query: "developer-tools", results: [{ name: "Cursor", tagline: "AI code editor", votes: 1500, topics: ["developer-tools", "ai"] }], source: "producthunt", count: 1 },
       ),
       "GET /scout/x": makeRoute(
-        "Search X (Twitter) for real-time posts, trends, and discussions via xAI Grok. AI agent API for social media intelligence and sentiment analysis",
+        "Search X (Twitter) for real-time posts, trends, and discussions via xAI Grok. AI agent API for social media intelligence and sentiment analysis. Accepts USDC payments on Base and Solana",
         PRICE_X,
         {
           input: { type: "http", queryParams: { q: "AI startups" } },
@@ -348,13 +378,13 @@ async function startServer() {
         { query: "AI startups", results: [{ text: "Exciting developments in AI agent infrastructure...", author: "@techfounder", likes: 234, retweets: 89, url: "https://x.com/techfounder/status/example" }], source: "x", count: 1 },
       ),
       "GET /scout/x402": makeRoute(
-        "Search x402 Bazaar for AI agent APIs with micropayment access. Discover x402-enabled services and developer tools",
+        "Search x402 Bazaar for AI agent APIs with micropayment access. Discover x402-enabled services and developer tools. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "search API" } }, output: { type: "json" } },
         { query: "search API", results: [{ url: "https://scout.hugen.tokyo/scout/hn", price: "$0.005", network: "Base" }], source: "bazaar", count: 1 },
       ),
       "GET /scout/report": makeRoute(
-        "Multi-source intelligence report — search 14 sources in parallel (HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Semantic Scholar, Lemmy, GitLab). AI agent API for comprehensive market research",
+        "14-source parallel intelligence report in one call — HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Semantic Scholar, Lemmy, GitLab. Best ROI on Bazaar. AI agent API for market research. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         {
           input: { type: "http", queryParams: { q: "MCP servers" } },
@@ -363,55 +393,55 @@ async function startServer() {
         { query: "MCP servers", focus: "balanced", sources_searched: 14, results: { hackernews: { count: 5 }, github: { count: 5 }, npm: { count: 5 } }, total_results: 70 },
       ),
       "GET /scout/report/full": makeRoute(
-        "Comprehensive intelligence report — search all 18 sources in parallel including X/Twitter, Product Hunt, Reddit, YouTube. AI agent API for full market research and competitive analysis",
+        "Comprehensive intelligence report — search all 18 sources in parallel including X/Twitter, Product Hunt, Reddit, YouTube. AI agent API for full market research and competitive analysis. Accepts USDC payments on Base and Solana",
         PRICE_XFULL,
         { input: { type: "http", queryParams: { q: "AI agents" } }, output: { type: "json" } },
         { query: "AI agents", focus: "comprehensive", sources_searched: 18, results: { hackernews: { count: 5 }, github: { count: 5 }, x: { count: 5 }, producthunt: { count: 5 } }, total_results: 90 },
       ),
       "GET /scout/devto": makeRoute(
-        "Search Dev.to for developer articles, tutorials, and technical blog posts. AI agent API for developer content and trend research",
+        "Search Dev.to for developer articles, tutorials, and technical blog posts. AI agent API for developer content and trend research. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "typescript" } }, output: { type: "json" } },
         { query: "typescript", results: [{ title: "Advanced TypeScript Patterns", reactions: 245, reading_time: 8, tags: ["typescript"] }], source: "devto", count: 1 },
       ),
       "GET /scout/hashnode": makeRoute(
-        "Search Hashnode for technical blog posts, tutorials, and developer insights. AI agent API for content research and trend monitoring",
+        "Search Hashnode for technical blog posts, tutorials, and developer insights. AI agent API for content research and trend monitoring. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "react" } }, output: { type: "json" } },
         { query: "react", results: [{ title: "React Server Components Deep Dive", reactions: 180, reading_time: 12 }], source: "hashnode", count: 1 },
       ),
       "GET /scout/lobsters": makeRoute(
-        "Search Lobste.rs for curated tech news and developer discussions. AI agent API for trend monitoring and community sentiment",
+        "Search Lobste.rs for curated tech news and developer discussions. AI agent API for trend monitoring and community sentiment. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "rust" } }, output: { type: "json" } },
         { query: "rust", results: [{ title: "Rust async patterns", score: 45, comments: 12, tags: ["rust", "programming"] }], source: "lobsters", count: 1 },
       ),
       "GET /scout/stackoverflow": makeRoute(
-        "Search Stack Overflow for developer Q&A, solutions, and best practices. AI agent API for technical knowledge retrieval",
+        "Search Stack Overflow for developer Q&A, solutions, and best practices. AI agent API for technical knowledge retrieval. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "async await" } }, output: { type: "json" } },
         { query: "async await", results: [{ title: "How to use async/await in JavaScript", score: 1250, answers: 8, accepted: true }], source: "stackoverflow", count: 1 },
       ),
       "GET /scout/arxiv": makeRoute(
-        "Search ArXiv for academic papers and preprints in AI, machine learning, CS, and mathematics. AI agent API for scientific research",
+        "Search ArXiv for academic papers and preprints in AI, machine learning, CS, and mathematics. AI agent API for scientific research. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "transformer attention" } }, output: { type: "json" } },
         { query: "transformer attention", results: [{ title: "Attention Is All You Need", authors: ["Vaswani et al."], categories: ["cs.CL"] }], source: "arxiv", count: 1 },
       ),
       "GET /scout/scholar": makeRoute(
-        "Search Semantic Scholar — 200M+ academic papers with citation graph. AI agent API for literature review and research intelligence",
+        "Search Semantic Scholar — 200M+ academic papers with citation graph. AI agent API for literature review and research intelligence. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "large language models" } }, output: { type: "json" } },
         { query: "large language models", results: [{ title: "Language Models are Few-Shot Learners", citations: 15000, year: 2020 }], source: "semantic_scholar", count: 1 },
       ),
       "GET /scout/gitlab": makeRoute(
-        "Search GitLab for public projects — enterprise open source and DevOps tools. AI agent API for competitive intelligence",
+        "Search GitLab for public projects — enterprise open source and DevOps tools. AI agent API for competitive intelligence. Accepts USDC payments on Base and Solana",
         PRICE_LOW,
         { input: { type: "http", queryParams: { q: "kubernetes" } }, output: { type: "json" } },
         { query: "kubernetes", results: [{ name: "gitlab-ci-kubernetes", stars: 850, language: "Go" }], source: "gitlab", count: 1 },
       ),
       "POST /scout/research": makeRoute(
-        "AI-synthesized intelligence report — searches 14 sources in parallel, then synthesizes findings with Gemini AI. Returns structured analysis with summary, key findings, sentiment, trends, and recommendations. Premium deep research endpoint",
+        "AI-synthesized intelligence report — searches 14 sources in parallel, then synthesizes findings with Gemini AI. Returns structured analysis with summary, key findings, sentiment, trends, and recommendations. AI agent API for comprehensive market research, competitive analysis, and technology trend forecasting. Accepts USDC payments on Base and Solana",
         config.PRICE_RESEARCH,
         {
           input: { type: "http", method: "POST", body: { query: "AI agent frameworks", per_page: 5, focus: "technical" } },
@@ -432,7 +462,7 @@ async function startServer() {
         },
       ),
       "POST /scout/research/deep": makeRoute(
-        "Comprehensive AI-synthesized report — searches all 18 sources (including X/Twitter) in parallel, then synthesizes with Gemini AI. Maximum coverage deep research endpoint for thorough market and technical analysis",
+        "Comprehensive AI-synthesized report — searches all 18 sources (including X/Twitter) in parallel, then synthesizes with Gemini AI. Maximum coverage for thorough market and technical analysis. AI agent API for full-spectrum competitive intelligence, investment due diligence, and strategic planning. Accepts USDC payments on Base and Solana",
         config.PRICE_RESEARCH_DEEP,
         {
           input: { type: "http", method: "POST", body: { query: "x402 protocol adoption", per_page: 5, focus: "market" } },
@@ -468,7 +498,16 @@ async function startServer() {
         (req as any)._channel = "rapidapi";
         return next();
       }
-      return x402Mw(req, res, next);
+      return x402Mw(req, res, (err?: any) => {
+        if (err) {
+          console.error(`[x402] Facilitator error: ${err}`);
+          return res
+            .status(502)
+            .set("Retry-After", "30")
+            .json({ error: "Payment service temporarily unavailable" });
+        }
+        next();
+      });
     });
   }
 
@@ -500,6 +539,7 @@ async function startServer() {
       req.path.startsWith("/.well-known") ||
       req.path === "/openapi.json" ||
       req.path === "/robots.txt" ||
+      req.path === "/llms.txt" ||
       req.path === "/";
     const ch = (req as any)._channel || (isFree ? "free" : "x402");
     stats.requests_by_channel[ch] = (stats.requests_by_channel[ch] || 0) + 1;
@@ -603,12 +643,14 @@ async function startServer() {
     res.json({
       openapi: "3.0.3",
       info: {
-        title: "Scout MCP — Multi-source Intelligence API",
+        title: "Scout — Multi-source Intelligence API",
         description:
-          "Search across Hacker News, GitHub, npm, PyPI, X/Twitter, Product Hunt, and x402 Bazaar. " +
-          "Paid via x402 micropayments (USDC on Base).",
-        version: "1.0.0",
-        contact: { url: "https://github.com/bartonguestier1725-collab/scout-mcp" },
+          "Search 19+ platforms in a single API call: Reddit, Hacker News, GitHub, Stack Overflow, arXiv, " +
+          "npm, PyPI, X/Twitter, YouTube, Product Hunt, Dev.to, Qiita, Zenn, Semantic Scholar, GitLab, " +
+          "Hashnode, Lobsters, Lemmy, and x402 Bazaar. " +
+          "Includes Deep Research with AI synthesis. " +
+          "Accepts USDC payments on Base and Solana via x402 protocol.",
+        version: "1.1.0",
       },
       servers: [{ url: origin }],
       paths: {
@@ -893,6 +935,70 @@ async function startServer() {
         },
       },
     });
+  });
+
+  // llms.txt — machine-readable API description for LLM agents
+  app.get("/llms.txt", (_req: Request, res: Response) => {
+    res.type("text/plain").send(
+      `# Scout — Multi-Source Intelligence Search API
+
+> Search across 18 sources in parallel and get structured JSON results. Built for AI agents and developers who need real-time intelligence from Hacker News, GitHub, npm, PyPI, X/Twitter, Product Hunt, Dev.to, ArXiv, Reddit, and more.
+
+## API Base URL
+
+https://scout.hugen.tokyo
+
+## Authentication
+
+This API uses the x402 protocol for micropayments. Include a valid x402 payment header with each request. Payments are in USDC on Base chain (eip155:8453).
+
+## Discovery
+
+- Payment info: GET /.well-known/x402
+- OpenAPI spec: GET /openapi.json
+
+## Individual Source Search — $0.005/request
+
+- GET /scout/hn?q={query} — Hacker News (stories, comments, polls)
+- GET /scout/npm?q={query} — npm package registry
+- GET /scout/github?q={query} — GitHub repositories
+- GET /scout/github/repo?owner={o}&repo={r} — GitHub repository details
+- GET /scout/pypi?q={query} — Python packages (PyPI)
+- GET /scout/ph?q={query} — Product Hunt products
+- GET /scout/x402?q={query} — x402 Bazaar API directory
+- GET /scout/devto?q={query} — Dev.to technical articles
+- GET /scout/hashnode?q={query} — Hashnode blog posts
+- GET /scout/lobsters?q={query} — Lobste.rs curated tech news
+- GET /scout/stackoverflow?q={query} — Stack Overflow Q&A
+- GET /scout/arxiv?q={query} — ArXiv academic papers
+- GET /scout/scholar?q={query} — Semantic Scholar (200M+ papers)
+- GET /scout/gitlab?q={query} — GitLab projects
+
+## Premium Endpoints
+
+- GET /scout/x?q={query} — X/Twitter search ($0.20/request)
+- GET /scout/report?q={query} — Multi-source parallel report, 14 sources ($0.005/request)
+- GET /scout/report/full?q={query} — Comprehensive report, 18 sources ($0.25/request)
+- POST /scout/research — AI-synthesized research report ($0.25/request)
+- POST /scout/research/deep — Deep research with comprehensive analysis ($0.50/request)
+
+## Report Focus Modes
+
+The /scout/report endpoint supports a focus parameter:
+- balanced (default): 14 free API sources
+- trending: HN + X + Product Hunt + Dev.to + Lobsters
+- comprehensive: All 18 sources
+
+## Pricing
+
+- Standard search: $0.005 USDC per request
+- X/Twitter search: $0.20 USDC per request
+- Multi-source report: $0.005 (basic) / $0.25 (full)
+- AI research: $0.25 (balanced) / $0.50 (comprehensive)
+- Network: Base (eip155:8453)
+- Payment: x402 protocol (USDC)
+`,
+    );
   });
 
   // ── Paid endpoints ────────────────────────────────────────
@@ -1201,6 +1307,28 @@ async function startServer() {
   });
 
   // ── Deep Research endpoints (POST) ──────────────────────
+
+  // GET handler for POST-only endpoints: return method guidance so that
+  // marketplace health-checkers (which probe with GET) see 200 instead of 404.
+  app.get("/scout/research", (_req: Request, res: Response) => {
+    res.json({
+      endpoint: "/scout/research",
+      method: "POST",
+      description: "AI-synthesized intelligence report — 14 sources + Gemini synthesis",
+      price: config.PRICE_RESEARCH,
+      usage: { method: "POST", body: { query: "string", per_page: "number (optional)", focus: "string (optional)" } },
+    });
+  });
+
+  app.get("/scout/research/deep", (_req: Request, res: Response) => {
+    res.json({
+      endpoint: "/scout/research/deep",
+      method: "POST",
+      description: "Comprehensive AI-synthesized report — 18 sources + Gemini synthesis",
+      price: config.PRICE_RESEARCH_DEEP,
+      usage: { method: "POST", body: { query: "string", per_page: "number (optional)", focus: "string (optional)" } },
+    });
+  });
 
   app.post("/scout/research", async (req: Request, res: Response) => {
     try {
