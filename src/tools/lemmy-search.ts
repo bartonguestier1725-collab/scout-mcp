@@ -47,6 +47,56 @@ interface LemmySearchResponse {
   posts: LemmyPost[];
 }
 
+// ── Lemmy instance allowlist (SSRF protection) ──
+
+const ALLOWED_INSTANCES = new Set([
+  "lemmy.world",
+  "lemmy.ml",
+  "programming.dev",
+  "lemm.ee",
+  "sh.itjust.works",
+  "feddit.de",
+  "sopuli.xyz",
+  "aussie.zone",
+  "hexbear.net",
+  "lemmygrad.ml",
+  "discuss.tchncs.de",
+  "midwest.social",
+  "lemmy.dbzer0.com",
+  "lemmy.blahaj.zone",
+  "infosec.pub",
+  "startrek.website",
+  "mander.xyz",
+  "lemmy.one",
+]);
+
+/** Validate instance against allowlist and reject SSRF attempts */
+function validateInstance(instance: string): string | null {
+  // Reject path traversal, IP addresses, localhost, port numbers
+  if (
+    instance.includes("/") ||
+    instance.includes("\\") ||
+    instance.includes(":") ||
+    instance.includes("@") ||
+    /^[\d.]+$/.test(instance) ||             // IPv4
+    instance.includes("[") ||                 // IPv6
+    /^localhost$/i.test(instance) ||
+    /^127\.\d+\.\d+\.\d+$/.test(instance) ||
+    /^0\.0\.0\.0$/.test(instance) ||
+    /^10\.\d+\.\d+\.\d+$/.test(instance) ||
+    /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/.test(instance) ||
+    /^192\.168\.\d+\.\d+$/.test(instance)
+  ) {
+    return `Invalid instance: "${instance}" — contains disallowed characters or is a private/local address`;
+  }
+
+  if (!ALLOWED_INSTANCES.has(instance.toLowerCase())) {
+    return `Instance "${instance}" is not in the allowlist. Allowed: ${[...ALLOWED_INSTANCES].join(", ")}`;
+  }
+
+  return null; // valid
+}
+
 // ── Execute ──────────────────────────────────────
 
 export async function execute(args: {
@@ -62,6 +112,12 @@ export async function execute(args: {
     sort = "TopAll",
     instance = "lemmy.world",
   } = args;
+
+  // SSRF protection: validate instance against allowlist
+  const instanceError = validateInstance(instance);
+  if (instanceError) {
+    return fail("lemmy", query, instanceError, Date.now() - start);
+  }
 
   try {
     const params = new URLSearchParams({

@@ -36,9 +36,18 @@ export async function safeFetchJson<T = unknown>(
 
       if (!res.ok) {
         const retryAfter = res.headers.get("Retry-After");
+        // Strip query parameters from URL in error messages to prevent API key leakage
+        const safeUrl = (() => {
+          try {
+            const u = new URL(url);
+            return u.origin + u.pathname;
+          } catch {
+            return url.split("?")[0];
+          }
+        })();
         throw new ScoutError(
-          `HTTP ${res.status} ${res.statusText} from ${url}`,
-          url,
+          `HTTP ${res.status} ${res.statusText} from ${safeUrl}`,
+          safeUrl,
           res.status,
           retryAfter ? Number(retryAfter) : undefined,
         );
@@ -95,9 +104,18 @@ export async function safeFetchText(
     const res = await fetch(url, { ...init, signal: ac.signal });
 
     if (!res.ok) {
+      // Strip query parameters from URL in error messages to prevent API key leakage
+      const safeUrl = (() => {
+        try {
+          const u = new URL(url);
+          return u.origin + u.pathname;
+        } catch {
+          return url.split("?")[0];
+        }
+      })();
       throw new ScoutError(
-        `HTTP ${res.status} ${res.statusText} from ${url}`,
-        url,
+        `HTTP ${res.status} ${res.statusText} from ${safeUrl}`,
+        safeUrl,
         res.status,
       );
     }

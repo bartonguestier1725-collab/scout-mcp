@@ -41,6 +41,7 @@ export const config = {
 
   // x402 payment settings
   EVM_ADDRESS: process.env.EVM_ADDRESS ?? "",
+  SOLANA_PAY_TO: process.env.SOLANA_PAY_TO ?? "",
   NETWORK: process.env.NETWORK ?? "eip155:8453",
   X402_PORT: Number(process.env.APIFY_CONTAINER_PORT) || Number(process.env.X402_PORT) || 4023,
   IS_APIFY: process.env.APIFY_IS_AT_HOME === "1",

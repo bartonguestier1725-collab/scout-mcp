@@ -8,8 +8,10 @@
  * MCP モード (index.ts) と HTTP モード (server.ts) は同じツール群を共有。
  */
 
+import crypto from "node:crypto";
 import express from "express";
 import type { Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 import { paymentMiddleware } from "@x402/express";
 import {
   x402ResourceServer,
@@ -207,7 +209,11 @@ function getXCostHealth(): {
 
 // ── Helper: query param extraction ──────────────────────────
 
-const q = (req: Request) => String(req.query.q || req.query.query || "");
+const MAX_QUERY_LENGTH = 500;
+const q = (req: Request) => {
+  const raw = String(req.query.q || req.query.query || "");
+  return raw.length > MAX_QUERY_LENGTH ? raw.slice(0, MAX_QUERY_LENGTH) : raw;
+};
 const MAX_PER_PAGE = 50;
 const MAX_PER_PAGE_COSTLY = 20; // X search & scout_report — higher upstream cost
 const perPage = (req: Request, max = MAX_PER_PAGE) => {
@@ -240,6 +246,28 @@ async function startServer() {
   const app = express();
   app.set("trust proxy", 1); // Cloudflare Tunnel terminates SSL
   app.use(express.json({ limit: "16kb" })); // POST body parsing for /research endpoints
+
+  // ── Rate limiting (before x402 middleware) ─────────────────
+  // Global limiter for all /scout/* routes: 120 req/min per IP
+  const globalLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Rate limit exceeded. Max 120 requests per minute." },
+  });
+  app.use("/scout", globalLimiter);
+
+  // Stricter limiter for expensive endpoints (research routes): 10 req/min per IP
+  const researchLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Rate limit exceeded. Max 10 research requests per minute." },
+  });
+  app.use("/scout/research", researchLimiter);
+  app.use("/scout/research/deep", researchLimiter);
 
   if (config.IS_APIFY) {
     // Apify Standby: PPE handles billing, no x402 needed
@@ -487,13 +515,17 @@ async function startServer() {
     // x402 payment middleware + RapidAPI bypass
     const x402Mw = paymentMiddleware(routes, resourceServer);
     app.use((req: Request, res: Response, next) => {
-      // RapidAPI proxy: secret header bypass
+      // RapidAPI proxy: secret header bypass (timing-safe comparison)
       const secret = req.headers["x-rapidapi-proxy-secret"];
       if (
         config.RAPIDAPI_PROXY_SECRET &&
         typeof secret === "string" &&
         secret.length > 0 &&
-        secret === config.RAPIDAPI_PROXY_SECRET
+        secret.length === config.RAPIDAPI_PROXY_SECRET.length &&
+        crypto.timingSafeEqual(
+          Buffer.from(secret),
+          Buffer.from(config.RAPIDAPI_PROXY_SECRET),
+        )
       ) {
         (req as any)._channel = "rapidapi";
         return next();
@@ -634,6 +666,151 @@ async function startServer() {
         "AI Research: $0.25 (balanced) / $0.50 (comprehensive). USDC on Base.\n\n" +
         "## Contact\n" +
         "GitHub: https://github.com/bartonguestier1725-collab/scout-mcp",
+    });
+  });
+
+  // A2A Agent Card — static discovery endpoint for Google A2A protocol
+  app.get("/.well-known/a2a-agent-card", (_req: Request, res: Response) => {
+    res.json({
+      name: "Scout MCP",
+      description:
+        "Multi-source intelligence API aggregating 12+ platforms including GitHub, Reddit, " +
+        "Hacker News, Stack Exchange, ArXiv, and more. Provides real-time search, trend analysis, " +
+        "and deep research capabilities for AI agents.",
+      url: "https://scout.hugen.tokyo",
+      version: "1.0.0",
+      supported_interfaces: [
+        {
+          url: "https://scout.hugen.tokyo/a2a/v1",
+          protocol_binding: "JSONRPC",
+          protocol_version: "0.3",
+        },
+      ],
+      capabilities: {
+        extensions: [
+          {
+            uri: "https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.2",
+            description: "Supports payments using the x402 protocol",
+            required: true,
+          },
+        ],
+      },
+      skills: [
+        {
+          id: "hackernews_search",
+          name: "Hacker News Search",
+          description: "Search Hacker News stories, comments, and polls via Algolia API",
+          tags: ["news", "tech", "startups", "discussions"],
+        },
+        {
+          id: "npm_search",
+          name: "npm Registry Search",
+          description: "Search npm package registry for JavaScript and TypeScript libraries",
+          tags: ["packages", "javascript", "typescript", "npm"],
+        },
+        {
+          id: "github_search",
+          name: "GitHub Repository Search",
+          description: "Search GitHub repositories by keyword, topic, or description",
+          tags: ["code", "repositories", "open-source", "github"],
+        },
+        {
+          id: "github_repo_info",
+          name: "GitHub Repository Details",
+          description: "Get detailed info about a specific GitHub repository including stars, forks, contributors, and releases",
+          tags: ["code", "repositories", "github", "details"],
+        },
+        {
+          id: "pypi_search",
+          name: "PyPI Package Search",
+          description: "Look up Python packages on PyPI by name",
+          tags: ["packages", "python", "pypi"],
+        },
+        {
+          id: "producthunt_search",
+          name: "Product Hunt Search",
+          description: "Search Product Hunt for new products, SaaS launches, and developer tools",
+          tags: ["products", "startups", "launches", "saas"],
+        },
+        {
+          id: "x_search",
+          name: "X/Twitter Search",
+          description: "Search X (Twitter) for real-time posts, trends, and discussions via xAI Grok",
+          tags: ["social-media", "twitter", "trends", "real-time"],
+        },
+        {
+          id: "bazaar_search",
+          name: "x402 Bazaar Search",
+          description: "Search x402 Bazaar for AI agent APIs with micropayment access",
+          tags: ["x402", "apis", "bazaar", "micropayments"],
+        },
+        {
+          id: "devto_search",
+          name: "Dev.to Article Search",
+          description: "Search Dev.to for developer articles, tutorials, and technical blog posts",
+          tags: ["articles", "tutorials", "blog", "devto"],
+        },
+        {
+          id: "hashnode_search",
+          name: "Hashnode Post Search",
+          description: "Search Hashnode for technical blog posts and developer insights",
+          tags: ["articles", "blog", "hashnode"],
+        },
+        {
+          id: "lobsters_search",
+          name: "Lobste.rs Search",
+          description: "Search Lobste.rs for curated tech news and developer discussions",
+          tags: ["news", "tech", "curated", "discussions"],
+        },
+        {
+          id: "stackexchange_search",
+          name: "Stack Overflow Search",
+          description: "Search Stack Overflow and StackExchange sites for developer Q&A",
+          tags: ["q&a", "stackoverflow", "programming", "solutions"],
+        },
+        {
+          id: "arxiv_search",
+          name: "ArXiv Paper Search",
+          description: "Search ArXiv for academic papers and preprints in AI, ML, CS, and mathematics",
+          tags: ["academic", "papers", "research", "arxiv"],
+        },
+        {
+          id: "semantic_scholar_search",
+          name: "Semantic Scholar Search",
+          description: "Search Semantic Scholar for academic papers across all disciplines (200M+ papers) with citation graph",
+          tags: ["academic", "papers", "citations", "research"],
+        },
+        {
+          id: "gitlab_search",
+          name: "GitLab Project Search",
+          description: "Search GitLab for public projects and enterprise open source",
+          tags: ["code", "repositories", "gitlab", "devops"],
+        },
+        {
+          id: "scout_report",
+          name: "Multi-Source Intelligence Report",
+          description: "Run a parallel intelligence report across 14 sources in a single call",
+          tags: ["report", "multi-source", "intelligence", "aggregation"],
+        },
+        {
+          id: "scout_report_full",
+          name: "Comprehensive Intelligence Report",
+          description: "Comprehensive report across all 18 sources including X/Twitter and Product Hunt",
+          tags: ["report", "comprehensive", "all-sources", "aggregation"],
+        },
+        {
+          id: "research",
+          name: "AI-Synthesized Research (Balanced)",
+          description: "Searches 14 sources in parallel, then synthesizes findings with Gemini AI into structured analysis",
+          tags: ["research", "ai-synthesis", "analysis", "intelligence"],
+        },
+        {
+          id: "research_deep",
+          name: "AI-Synthesized Research (Comprehensive)",
+          description: "Searches all 18 sources in parallel including X/Twitter, then synthesizes with Gemini AI for maximum coverage",
+          tags: ["research", "ai-synthesis", "comprehensive", "deep-analysis"],
+        },
+      ],
     });
   });
 
