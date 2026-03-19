@@ -679,13 +679,6 @@ async function startServer() {
         "and deep research capabilities for AI agents.",
       url: "https://scout.hugen.tokyo",
       version: "1.0.0",
-      supported_interfaces: [
-        {
-          url: "https://scout.hugen.tokyo/a2a/v1",
-          protocol_binding: "JSONRPC",
-          protocol_version: "0.3",
-        },
-      ],
       capabilities: {
         extensions: [
           {
