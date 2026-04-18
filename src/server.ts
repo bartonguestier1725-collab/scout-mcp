@@ -378,7 +378,18 @@ async function startServer() {
             }),
           }
         : {}),
-      ...(bazaarInfo ? { extensions: { bazaar: { info: bazaarInfo } } } : {}),
+      ...(bazaarInfo
+        ? {
+            extensions: {
+              bazaar: {
+                discoverable: true,
+                category: "search",
+                tags: ["multi-source", "x402", "structured-json"],
+                info: bazaarInfo,
+              },
+            },
+          }
+        : {}),
     });
 
     // --- Route configs (x402 payment-protected) ---
