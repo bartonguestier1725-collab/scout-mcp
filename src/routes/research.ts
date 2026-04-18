@@ -1,8 +1,8 @@
 /**
  * Research route handlers – AI-synthesized intelligence reports
  *
- * POST /scout/research      → balanced (14 sources) + Gemini synthesis ($0.25)
- * POST /scout/research/deep → comprehensive (18 sources) + Gemini synthesis ($0.50)
+ * POST /scout/research      → balanced (14 sources) + AI synthesis ($0.25)
+ * POST /scout/research/deep → comprehensive (18 sources) + AI synthesis ($0.50)
  */
 
 import type { Request, Response } from "express";
@@ -118,7 +118,7 @@ export async function handleResearch(
       return;
     }
 
-    // Step 2: AI synthesis (Gemini failure → 200 + synthesis: null)
+    // Step 2: AI synthesis (failure → 200 + synthesis: null)
     const synthesis = await synthesize(query, reportResult.data, focus);
 
     const processingTime = Date.now() - start;
@@ -129,7 +129,7 @@ export async function handleResearch(
       synthesis,
       raw_results: reportResult.data,
       meta: {
-        model: synthesis ? GEMINI_MODEL : null,
+        model: synthesis ? "ai-synthesis" : null,
         sources_queried: 14,
         sources_responded: summary?.sources_succeeded ?? 0,
         processing_time_ms: processingTime,
@@ -196,7 +196,7 @@ export async function handleResearchDeep(
       synthesis,
       raw_results: reportResult.data,
       meta: {
-        model: synthesis ? GEMINI_MODEL : null,
+        model: synthesis ? "ai-synthesis" : null,
         sources_queried: 18,
         sources_responded: summary?.sources_succeeded ?? 0,
         processing_time_ms: processingTime,

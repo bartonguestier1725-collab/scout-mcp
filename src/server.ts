@@ -25,6 +25,7 @@ import { bazaarResourceServerExtension } from "@x402/extensions";
 import { createFacilitatorConfig } from "@coinbase/x402";
 
 import { config } from "./config.js";
+import { PaymentLogger } from "./payment-logger.js";
 
 // Route handlers
 import { handleResearch, handleResearchDeep } from "./routes/research.js";
@@ -203,7 +204,7 @@ function getXCostHealth(): {
     configured_price: config.PRICE_X,
     margin_pct: Math.round(margin),
     alert: margin < 40, // Alert when margin drops below 40%
-    note: "Includes MCP-mode calls (no revenue). Check xAI dashboard for true x402 margin.",
+    note: "Cost = web_search $0.005/call + tokens. Includes MCP-mode calls (no revenue).",
   };
 }
 
@@ -304,6 +305,11 @@ async function startServer() {
 
     resourceServer.registerExtension(bazaarResourceServerExtension);
 
+    // Payment logging — records settlements to shared SQLite DB
+    const payLogger = new PaymentLogger("scout");
+    resourceServer.onAfterSettle(payLogger.logSettlement);
+    resourceServer.onSettleFailure(payLogger.logFailure);
+
     // --- Payment options (env-configurable via config.ts) ---
     const PRICE_LOW = config.PRICE_LOW;
     const PRICE_X = config.PRICE_X;
@@ -331,6 +337,26 @@ async function startServer() {
       return accepts;
     };
 
+    const _alternatives = {
+      broker: {
+        info: "Call any x402 API with just an API key — no wallet integration needed",
+        step_1: "POST https://discovery.hugen.tokyo/keys/create → free key ($0.05 credit — broker included)",
+        step_2: "POST https://discovery.hugen.tokyo/broker/call with X-API-Key header → returns API data directly",
+        cost: "$0.01/call (upstream payment handled for you)",
+      },
+      mcp: {
+        info: "If you support MCP, connect once and access 2,300+ APIs through 58 tools",
+        url: "https://mcp.hugen.tokyo/mcp",
+        transport: "streamable-http",
+        setup: "POST https://discovery.hugen.tokyo/keys/create for a free key, pass as _meta['api_key']",
+      },
+      sdk: {
+        info: "One-line Python access — no wallet, no setup",
+        install: "pip install x402-pay",
+        usage: "import x402_pay; r = x402_pay.get('https://scout.hugen.tokyo/scout/hn?q=your+query')",
+      },
+    };
+
     const makeRoute = (
       description: string,
       price: string,
@@ -346,6 +372,7 @@ async function startServer() {
               contentType: "application/json",
               body: {
                 _notice: `Payment required (${price} USDC on Base). Sample response below.`,
+                _alternatives,
                 ...sampleData,
               },
             }),
@@ -468,8 +495,14 @@ async function startServer() {
         { input: { type: "http", queryParams: { q: "kubernetes" } }, output: { type: "json" } },
         { query: "kubernetes", results: [{ name: "gitlab-ci-kubernetes", stars: 850, language: "Go" }], source: "gitlab", count: 1 },
       ),
+      "GET /scout/awesome": makeRoute(
+        "Curated x402 ecosystem directory — 277 human-reviewed projects: SDKs, production APIs, facilitators, agent frameworks, tools. Spam-filtered alternative to Bazaar (13K entries, 85% spam). Search by keyword or browse by category. Accepts USDC payments on Base and Solana",
+        PRICE_LOW,
+        { input: { type: "http", queryParams: { q: "sdk", category: "Python" } }, output: { type: "json" } },
+        { query: "sdk", category: "Python", total: 6, results: [{ name: "x402", url: "https://pypi.org/project/x402/", description: "Official Python SDK", category: "Python" }] },
+      ),
       "POST /scout/research": makeRoute(
-        "AI-synthesized intelligence report — searches 14 sources in parallel, then synthesizes findings with Gemini AI. Returns structured analysis with summary, key findings, sentiment, trends, and recommendations. AI agent API for comprehensive market research, competitive analysis, and technology trend forecasting. Accepts USDC payments on Base and Solana",
+        "AI-synthesized intelligence report — searches 14 sources in parallel, then synthesizes findings with multi-source AI synthesis. Returns structured analysis with summary, key findings, sentiment, trends, and recommendations. AI agent API for comprehensive market research, competitive analysis, and technology trend forecasting. Accepts USDC payments on Base and Solana",
         config.PRICE_RESEARCH,
         {
           input: { type: "http", method: "POST", body: { query: "AI agent frameworks", per_page: 5, focus: "technical" } },
@@ -486,11 +519,11 @@ async function startServer() {
             trends: ["Multi-agent orchestration", "Tool-use patterns"],
             recommendations: ["Evaluate LangGraph for complex workflows"],
           },
-          meta: { model: "gemini-2.5-flash-lite", sources_queried: 14, sources_responded: 12, processing_time_ms: 3500 },
+          meta: { model: "ai-synthesis", sources_queried: 14, sources_responded: 12, processing_time_ms: 3500 },
         },
       ),
       "POST /scout/research/deep": makeRoute(
-        "Comprehensive AI-synthesized report — searches all 18 sources (including X/Twitter) in parallel, then synthesizes with Gemini AI. Maximum coverage for thorough market and technical analysis. AI agent API for full-spectrum competitive intelligence, investment due diligence, and strategic planning. Accepts USDC payments on Base and Solana",
+        "Comprehensive AI-synthesized report — searches all 18 sources (including X/Twitter) in parallel, then synthesizes with multi-source AI synthesis. Maximum coverage for thorough market and technical analysis. AI agent API for full-spectrum competitive intelligence, investment due diligence, and strategic planning. Accepts USDC payments on Base and Solana",
         config.PRICE_RESEARCH_DEEP,
         {
           input: { type: "http", method: "POST", body: { query: "x402 protocol adoption", per_page: 5, focus: "market" } },
@@ -507,7 +540,7 @@ async function startServer() {
             trends: ["AI agent micropayments", "Decentralized API economy"],
             recommendations: ["Monitor Bazaar growth metrics"],
           },
-          meta: { model: "gemini-2.5-flash-lite", sources_queried: 18, sources_responded: 16, processing_time_ms: 5200 },
+          meta: { model: "ai-synthesis", sources_queried: 18, sources_responded: 16, processing_time_ms: 5200 },
         },
       ),
     };
@@ -532,7 +565,7 @@ async function startServer() {
       }
       return x402Mw(req, res, (err?: any) => {
         if (err) {
-          console.error(`[x402] Facilitator error: ${err}`);
+          console.error(`[x402] Facilitator error: ${String(err).slice(0, 200)}`);
           return res
             .status(502)
             .set("Retry-After", "30")
@@ -794,13 +827,13 @@ async function startServer() {
         {
           id: "research",
           name: "AI-Synthesized Research (Balanced)",
-          description: "Searches 14 sources in parallel, then synthesizes findings with Gemini AI into structured analysis",
+          description: "Searches 14 sources in parallel, then synthesizes findings with AI into structured analysis",
           tags: ["research", "ai-synthesis", "analysis", "intelligence"],
         },
         {
           id: "research_deep",
           name: "AI-Synthesized Research (Comprehensive)",
-          description: "Searches all 18 sources in parallel including X/Twitter, then synthesizes with Gemini AI for maximum coverage",
+          description: "Searches all 18 sources in parallel including X/Twitter, then synthesizes with AI for maximum coverage",
           tags: ["research", "ai-synthesis", "comprehensive", "deep-analysis"],
         },
       ],
@@ -1048,7 +1081,7 @@ async function startServer() {
         "/scout/research": {
           post: {
             summary: "AI-synthesized intelligence report (14 sources)",
-            description: "Searches 14 sources in parallel (HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Semantic Scholar, Lemmy, GitLab, Zenn, Qiita), then synthesizes findings using Gemini AI. Returns structured analysis with summary, key findings, sentiment, trends, and recommendations alongside raw search results.",
+            description: "Searches 14 sources in parallel (HN, GitHub, npm, PyPI, Dev.to, Hashnode, Lobsters, StackExchange, ArXiv, Semantic Scholar, Lemmy, GitLab, Zenn, Qiita), then synthesizes findings using AI. Returns structured analysis with summary, key findings, sentiment, trends, and recommendations alongside raw search results.",
             operationId: "research",
             requestBody: {
               required: true,
@@ -1077,7 +1110,7 @@ async function startServer() {
         "/scout/research/deep": {
           post: {
             summary: "Comprehensive AI-synthesized report (all 18 sources)",
-            description: "Searches all 18 sources in parallel including X/Twitter, Product Hunt, Reddit, and YouTube, then synthesizes findings using Gemini AI. Maximum coverage for thorough market and technical analysis.",
+            description: "Searches all 18 sources in parallel including X/Twitter, Product Hunt, Reddit, and YouTube, then synthesizes findings using AI. Maximum coverage for thorough market and technical analysis.",
             operationId: "researchDeep",
             requestBody: {
               required: true,
@@ -1476,6 +1509,59 @@ The /scout/report endpoint supports a focus parameter:
     }
   });
 
+  // ── awesome-x402 curated directory ──────────────────────
+
+  // Load awesome data at startup
+  // Try build/data first (production), fall back to src/data (dev)
+  const buildDataPath = new URL("../build/data/awesome-x402.json", import.meta.url).pathname;
+  const srcDataPath = new URL("../src/data/awesome-x402.json", import.meta.url).pathname;
+  const { existsSync: _exists } = await import("fs");
+  const awesomePath = _exists(buildDataPath) ? buildDataPath : srcDataPath;
+  let _awesomeData: Array<{ name: string; url: string; description: string; category: string; section: string; links?: Record<string, string> }> = [];
+  try {
+    const { readFileSync } = await import("fs");
+    _awesomeData = JSON.parse(readFileSync(awesomePath, "utf-8"));
+    console.error(`[awesome] Loaded ${_awesomeData.length} entries`);
+  } catch {
+    console.error(`[awesome] Failed to load ${awesomePath}`);
+  }
+
+  app.get("/scout/awesome", (req: Request, res: Response) => {
+    if (_awesomeData.length === 0) {
+      return res.status(503).json({
+        success: false,
+        error: "Curated data not loaded. Service temporarily unavailable.",
+      });
+    }
+
+    const query = (req.query.q as string || "").toLowerCase().trim();
+    const category = (req.query.category as string || "").toLowerCase().trim();
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 50);
+
+    let results = _awesomeData;
+
+    if (category) {
+      results = results.filter(e => e.category.toLowerCase().includes(category));
+    }
+    if (query) {
+      const terms = query.split(/\s+/);
+      results = results.filter(e => {
+        const text = `${e.name} ${e.description} ${e.category}`.toLowerCase();
+        return terms.every(t => text.includes(t));
+      });
+    }
+
+    const sliced = results.slice(0, limit);
+    res.json({
+      success: true,
+      query: query || undefined,
+      category_filter: category || undefined,
+      total: results.length,
+      returned: sliced.length,
+      results: sliced,
+    });
+  });
+
   // ── Deep Research endpoints (POST) ──────────────────────
 
   // GET handler for POST-only endpoints: return method guidance so that
@@ -1484,7 +1570,7 @@ The /scout/report endpoint supports a focus parameter:
     res.json({
       endpoint: "/scout/research",
       method: "POST",
-      description: "AI-synthesized intelligence report — 14 sources + Gemini synthesis",
+      description: "AI-synthesized intelligence report — 14 sources + AI synthesis",
       price: config.PRICE_RESEARCH,
       usage: { method: "POST", body: { query: "string", per_page: "number (optional)", focus: "string (optional)" } },
     });
@@ -1494,7 +1580,7 @@ The /scout/report endpoint supports a focus parameter:
     res.json({
       endpoint: "/scout/research/deep",
       method: "POST",
-      description: "Comprehensive AI-synthesized report — 18 sources + Gemini synthesis",
+      description: "Comprehensive AI-synthesized report — 18 sources + AI synthesis",
       price: config.PRICE_RESEARCH_DEEP,
       usage: { method: "POST", body: { query: "string", per_page: "number (optional)", focus: "string (optional)" } },
     });

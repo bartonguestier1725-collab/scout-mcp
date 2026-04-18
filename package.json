@@ -1,6 +1,6 @@
 {
   "name": "scout-mcp",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Multi-source intelligence reconnaissance MCP server",
   "type": "module",
   "main": "build/index.js",
@@ -8,7 +8,7 @@
     "scout-cli": "build/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && mkdir -p build/data && cp src/data/*.json build/data/",
     "dev": "tsc --watch",
     "start": "node build/index.js",
     "serve": "node build/server.js",

@@ -57,7 +57,7 @@ export async function execute(args: {
     const sortOrder = "descending";
 
     const url =
-      `http://export.arxiv.org/api/query?search_query=${searchQuery}` +
+      `https://export.arxiv.org/api/query?search_query=${searchQuery}` +
       `&start=0&max_results=${Math.min(per_page, 50)}` +
       `&sortBy=${sortBy}&sortOrder=${sortOrder}`;
 
@@ -68,7 +68,8 @@ export async function execute(args: {
 
     const items = entryBlocks.map((entry) => {
       const id = extractTag(entry, "id");
-      const arxivId = id.replace("http://arxiv.org/abs/", "");
+      // ArXiv may return http:// or https:// in <id> tags
+      const arxivId = id.replace(/https?:\/\/arxiv\.org\/abs\//, "");
       const authors = extractAllTags(entry, "name");
 
       return {
@@ -76,10 +77,8 @@ export async function execute(args: {
         title: extractTag(entry, "title"),
         summary: extractTag(entry, "summary").slice(0, 300),
         authors,
-        url: id,
-        pdf_url: extractAttr(entry, "link", "title")
-          ? `http://arxiv.org/pdf/${arxivId}`
-          : extractTag(entry, "id").replace("/abs/", "/pdf/"),
+        url: `https://arxiv.org/abs/${arxivId}`,
+        pdf_url: `https://arxiv.org/pdf/${arxivId}`,
         categories: extractAllTags(entry, "category")
           .map(() => "")
           .filter(Boolean), // categories are attributes, handle below

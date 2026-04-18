@@ -19,6 +19,7 @@ export class ScoutError extends Error {
     public readonly source: string,
     public readonly statusCode?: number,
     public readonly retryAfter?: number,
+    public readonly isTimeout?: boolean,
   ) {
     super(message);
     this.name = "ScoutError";

@@ -90,47 +90,75 @@ export async function safeFetchJson<T = unknown>(
 
 /**
  * Fetch raw text (for HTML scraping).
+ * Supports retries on timeout and 429 (matching safeFetchJson behaviour).
  */
 export async function safeFetchText(
   url: string,
   opts: FetchOptions = {},
 ): Promise<string> {
-  const { timeoutMs = config.TIMEOUT_MS, ...init } = opts;
+  const { timeoutMs = config.TIMEOUT_MS, retries = 1, ...init } = opts;
 
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  const attempt = async (): Promise<string> => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
 
-  try {
-    const res = await fetch(url, { ...init, signal: ac.signal });
+    try {
+      const res = await fetch(url, { ...init, signal: ac.signal });
 
-    if (!res.ok) {
-      // Strip query parameters from URL in error messages to prevent API key leakage
-      const safeUrl = (() => {
-        try {
-          const u = new URL(url);
-          return u.origin + u.pathname;
-        } catch {
-          return url.split("?")[0];
-        }
-      })();
+      if (!res.ok) {
+        // Strip query parameters from URL in error messages to prevent API key leakage
+        const safeUrl = (() => {
+          try {
+            const u = new URL(url);
+            return u.origin + u.pathname;
+          } catch {
+            return url.split("?")[0];
+          }
+        })();
+        const retryAfter = res.headers.get("Retry-After");
+        throw new ScoutError(
+          `HTTP ${res.status} ${res.statusText} from ${safeUrl}`,
+          safeUrl,
+          res.status,
+          retryAfter ? Number(retryAfter) : undefined,
+        );
+      }
+
+      return await res.text();
+    } catch (err) {
+      if (err instanceof ScoutError) throw err;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new ScoutError(`Request timed out after ${timeoutMs}ms`, url, undefined, undefined, true);
+      }
       throw new ScoutError(
-        `HTTP ${res.status} ${res.statusText} from ${safeUrl}`,
-        safeUrl,
-        res.status,
+        err instanceof Error ? err.message : String(err),
+        url,
       );
+    } finally {
+      clearTimeout(timer);
     }
+  };
 
-    return await res.text();
-  } catch (err) {
-    if (err instanceof ScoutError) throw err;
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new ScoutError(`Request timed out after ${timeoutMs}ms`, url);
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await attempt();
+    } catch (err) {
+      if (err instanceof ScoutError && i < retries) {
+        // Retry on 429 (rate limit) or timeout
+        if (err.statusCode === 429 || err.isTimeout) {
+          const wait = err.retryAfter
+            ? Math.min(err.retryAfter * 1000, 10_000)
+            : 2_000 * (i + 1);
+          const reason = err.statusCode === 429 ? "429" : "timeout";
+          console.error(`[fetch] ${reason} from ${url}, retry in ${wait}ms (${i + 1}/${retries})`);
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
+      }
+      throw err;
     }
-    throw new ScoutError(
-      err instanceof Error ? err.message : String(err),
-      url,
-    );
-  } finally {
-    clearTimeout(timer);
   }
+
+  // Unreachable, but TypeScript needs it
+  throw new ScoutError("Exhausted retries", url);
 }

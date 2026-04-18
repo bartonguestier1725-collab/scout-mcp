@@ -1,10 +1,10 @@
 # Multi-Source Tech Intelligence Search
 
-Search 6+ tech sources in one API call and get structured JSON results. Built for developers, analysts, and AI agents who need real-time tech intelligence without juggling multiple APIs.
+Search 18 tech sources in one API call and get structured JSON results. Built for developers, analysts, and AI agents who need real-time tech intelligence without juggling multiple APIs.
 
 ## What does Multi-Source Tech Intelligence Search do?
 
-Multi-Source Tech Intelligence Search queries **Hacker News, GitHub, npm, PyPI, Product Hunt, and X/Twitter** simultaneously and returns unified, structured JSON. Instead of writing separate integrations for each platform, you make one request and get normalized results with relevance scores, metadata, and direct links.
+Multi-Source Tech Intelligence Search queries **Hacker News, GitHub, npm, PyPI, Product Hunt, X/Twitter, Dev.to, Hashnode, ArXiv, Reddit, YouTube, StackExchange, Lobste.rs, Zenn, Qiita, Semantic Scholar, Lemmy, and GitLab** simultaneously and returns unified, structured JSON. Instead of writing separate integrations for each platform, you make one request and get normalized results with relevance scores, metadata, and direct links.
 
 Use it for:
 - **Competitive intelligence** — track what competitors are building and launching
@@ -14,7 +14,7 @@ Use it for:
 
 ## Why use Multi-Source Tech Intelligence Search?
 
-- **6 sources, 1 call** — HN, GitHub, npm, PyPI, Product Hunt, and X/Twitter
+- **18 sources, 1 call** — HN, GitHub, npm, PyPI, Product Hunt, X/Twitter, Dev.to, Hashnode, ArXiv, Reddit, YouTube, StackExchange, Lobste.rs, Zenn, Qiita, Semantic Scholar, Lemmy, and GitLab
 - **Structured output** — consistent JSON schema across all sources
 - **Pay-per-use** — no subscription, pay only for what you search
 - **Real-time data** — live API queries, not cached or stale data
@@ -27,10 +27,10 @@ This Actor uses **Pay Per Event** pricing — you only pay for searches you actu
 
 | What you get | Price per call | Event name |
 |---|---|---|
-| Search one free source (HN, GitHub, npm, PyPI, Product Hunt, or Bazaar) | **$0.005** | `search-free` |
-| Search X/Twitter (AI-powered via xAI Grok) | **$0.10** | `search-x` |
-| Balanced report (4 free sources in parallel) | **$0.02** | `report-balanced` |
-| Comprehensive report (all 6 sources including X) | **$0.15** | `report-full` |
+| Search one free source (HN, GitHub, npm, PyPI, Product Hunt, Dev.to, Hashnode, ArXiv, Reddit, YouTube, StackExchange, Lobste.rs, Zenn, Qiita, Semantic Scholar, Lemmy, GitLab) | **$0.005** | `search-free` |
+| Search X/Twitter (AI-powered via xAI Grok) | **$0.20** | `search-x` |
+| Balanced report (14 free sources in parallel) | **$0.005** | `report-balanced` |
+| Comprehensive report (all 18 sources including X) | **$0.25** | `report-full` |
 
 **Example**: Running 100 balanced reports costs just $2.00.
 
@@ -75,7 +75,7 @@ Report endpoints return results grouped by source:
   "success": true,
   "query": "MCP servers",
   "focus": "balanced",
-  "sources_queried": ["hn", "github", "npm", "pypi"],
+  "sources_queried": ["hn", "github", "npm", "pypi", "devto", "hashnode", "lobsters", "stackoverflow", "arxiv", "zenn", "qiita", "scholar", "lemmy", "gitlab"],
   "results": {
     "hn": { "success": true, "count": 10, "data": [...] },
     "github": { "success": true, "count": 10, "data": [...] },
@@ -93,32 +93,26 @@ This Actor runs in **Standby mode** — it's always available as an HTTP API.
 
 ```bash
 # Search Hacker News
-curl "https://gen-ishinabe--scout-multi-source-search.apify.actor/scout/hn?q=AI+agents&per_page=5" \
-  -H "Authorization: Bearer YOUR_APIFY_TOKEN"
+curl "https://scout.hugen.tokyo/scout/hn?q=AI+agents&per_page=5"
 
 # Search GitHub repositories
-curl "https://gen-ishinabe--scout-multi-source-search.apify.actor/scout/github?q=mcp+server&sort=stars&per_page=10" \
-  -H "Authorization: Bearer YOUR_APIFY_TOKEN"
+curl "https://scout.hugen.tokyo/scout/github?q=mcp+server&sort=stars&per_page=10"
 
 # Search npm packages
-curl "https://gen-ishinabe--scout-multi-source-search.apify.actor/scout/npm?q=openai&per_page=10" \
-  -H "Authorization: Bearer YOUR_APIFY_TOKEN"
+curl "https://scout.hugen.tokyo/scout/npm?q=openai&per_page=10"
 
 # Search X/Twitter (AI-powered)
-curl "https://gen-ishinabe--scout-multi-source-search.apify.actor/scout/x?q=x402+protocol&per_page=10" \
-  -H "Authorization: Bearer YOUR_APIFY_TOKEN"
+curl "https://scout.hugen.tokyo/scout/x?q=x402+protocol&per_page=10"
 ```
 
 ### Multi-source reports
 
 ```bash
-# Balanced report (4 free sources)
-curl "https://gen-ishinabe--scout-multi-source-search.apify.actor/scout/report?q=MCP+servers&per_page=5" \
-  -H "Authorization: Bearer YOUR_APIFY_TOKEN"
+# Balanced report (14 free sources)
+curl "https://scout.hugen.tokyo/scout/report?q=MCP+servers&per_page=5"
 
-# Comprehensive report (all 6 sources including X)
-curl "https://gen-ishinabe--scout-multi-source-search.apify.actor/scout/report/full?q=AI+agents&per_page=5" \
-  -H "Authorization: Bearer YOUR_APIFY_TOKEN"
+# Comprehensive report (all 18 sources including X)
+curl "https://scout.hugen.tokyo/scout/report/full?q=AI+agents&per_page=5"
 ```
 
 ### Available endpoints
@@ -130,10 +124,21 @@ curl "https://gen-ishinabe--scout-multi-source-search.apify.actor/scout/report/f
 | `/scout/npm` | npm Registry | $0.005 |
 | `/scout/pypi` | PyPI Packages | $0.005 |
 | `/scout/ph` | Product Hunt | $0.005 |
-| `/scout/x402` | x402 Bazaar | $0.005 |
-| `/scout/x` | X/Twitter (xAI Grok) | $0.10 |
-| `/scout/report` | Balanced (4 sources) | $0.02 |
-| `/scout/report/full` | Comprehensive (6 sources) | $0.15 |
+| `/scout/x` | X/Twitter (xAI Grok) | $0.20 |
+| `/scout/devto` | Dev.to | $0.005 |
+| `/scout/hashnode` | Hashnode | $0.005 |
+| `/scout/arxiv` | ArXiv | $0.005 |
+| `/scout/reddit` | Reddit | $0.005 |
+| `/scout/youtube` | YouTube | $0.005 |
+| `/scout/stackoverflow` | StackExchange | $0.005 |
+| `/scout/lobsters` | Lobste.rs | $0.005 |
+| `/scout/zenn` | Zenn | $0.005 |
+| `/scout/qiita` | Qiita | $0.005 |
+| `/scout/scholar` | Semantic Scholar | $0.005 |
+| `/scout/lemmy` | Lemmy | $0.005 |
+| `/scout/gitlab` | GitLab | $0.005 |
+| `/scout/report` | Balanced (14 sources) | $0.005 |
+| `/scout/report/full` | Comprehensive (18 sources) | $0.25 |
 | `/health` | Health check | Free |
 
 ## Integrations
