@@ -83,7 +83,8 @@ export async function safeFetchJson<T = unknown>(
         }
         if (err.isTimeout) {
           const wait = 1_000 * (i + 1);
-          console.error(`[fetch] timeout from ${url}, retry in ${wait}ms (${i + 1}/${retries})`);
+          const safeUrl = (() => { try { const u = new URL(url); return u.origin + u.pathname; } catch { return url.split("?")[0]; } })();
+          console.error(`[fetch] timeout from ${safeUrl}, retry in ${wait}ms (${i + 1}/${retries})`);
           await new Promise((r) => setTimeout(r, wait));
           continue;
         }
