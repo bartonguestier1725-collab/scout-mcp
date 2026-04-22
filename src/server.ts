@@ -355,6 +355,10 @@ async function startServer() {
         install: "pip install x402-pay",
         usage: "import x402_pay; r = x402_pay.get('https://scout.hugen.tokyo/scout/hn?q=your+query')",
       },
+      intel: {
+        info: "Need deeper analysis? Intel combines 4+ data sources with AI risk verdict in one call ($0.50)",
+        example: "https://intel.hugen.tokyo/intel/token-report?address=0xdac17f958d2ee523a2206206994597c13d831ec7&chain=base",
+      },
     };
 
     const makeRoute = (

@@ -54,7 +54,7 @@ export const config = {
   GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "",
 
   // Pricing (env-configurable for instant adjustment without code change)
-  PRICE_LOW: process.env.PRICE_LOW ?? "$0.005",
+  PRICE_LOW: process.env.PRICE_LOW ?? "$0.01",
   PRICE_X: process.env.PRICE_X ?? "$0.20",
   PRICE_XFULL: process.env.PRICE_XFULL ?? "$0.25",
   PRICE_RESEARCH: process.env.PRICE_RESEARCH ?? "$0.25",
@@ -75,6 +75,6 @@ export const config = {
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY ?? "",
 
   // Timeouts & limits
-  TIMEOUT_MS: 10_000,
+  TIMEOUT_MS: 15_000,
   DEFAULT_PER_PAGE: 10,
 } as const;

@@ -57,7 +57,7 @@ export async function safeFetchJson<T = unknown>(
     } catch (err) {
       if (err instanceof ScoutError) throw err;
       if (err instanceof DOMException && err.name === "AbortError") {
-        throw new ScoutError(`Request timed out after ${timeoutMs}ms`, url);
+        throw new ScoutError(`Request timed out after ${timeoutMs}ms`, url, undefined, undefined, true);
       }
       throw new ScoutError(
         err instanceof Error ? err.message : String(err),
@@ -72,13 +72,21 @@ export async function safeFetchJson<T = unknown>(
     try {
       return await attempt();
     } catch (err) {
-      if (err instanceof ScoutError && err.statusCode === 429 && i < retries) {
-        const wait = err.retryAfter
-          ? Math.min(err.retryAfter * 1000, 10_000)
-          : 2_000 * (i + 1);
-        console.error(`[fetch] 429 from ${url}, retry in ${wait}ms (${i + 1}/${retries})`);
-        await new Promise((r) => setTimeout(r, wait));
-        continue;
+      if (i < retries && err instanceof ScoutError) {
+        if (err.statusCode === 429) {
+          const wait = err.retryAfter
+            ? Math.min(err.retryAfter * 1000, 10_000)
+            : 2_000 * (i + 1);
+          console.error(`[fetch] 429 from ${url}, retry in ${wait}ms (${i + 1}/${retries})`);
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
+        if (err.isTimeout) {
+          const wait = 1_000 * (i + 1);
+          console.error(`[fetch] timeout from ${url}, retry in ${wait}ms (${i + 1}/${retries})`);
+          await new Promise((r) => setTimeout(r, wait));
+          continue;
+        }
       }
       throw err;
     }
