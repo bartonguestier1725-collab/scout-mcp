@@ -305,6 +305,30 @@ async function startServer() {
 
     resourceServer.registerExtension(bazaarResourceServerExtension);
 
+    // Settlement retry — recover from transient CDP facilitator errors
+    resourceServer.onSettleFailure(async (ctx) => {
+      const msg = ctx.error?.message ?? "";
+      const isTransient =
+        msg.includes("Missing or invalid parameters") ||
+        msg.includes("Nonce provided for the transaction is lower");
+      if (!isTransient) return;
+      console.error("[scout-mcp] Settlement failed (transient), retrying in 2s...");
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const result = await facilitatorClient.settle(
+          ctx.paymentPayload,
+          ctx.requirements,
+        );
+        if (result.success) {
+          console.error("[scout-mcp] Settlement retry succeeded");
+          return { recovered: true, result };
+        }
+      } catch {
+        // retry also failed — fall through to logger
+      }
+      console.error("[scout-mcp] Settlement retry also failed");
+    });
+
     // Payment logging — records settlements to shared SQLite DB
     const payLogger = new PaymentLogger("scout");
     resourceServer.onAfterSettle(payLogger.logSettlement);
