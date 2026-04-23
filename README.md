@@ -93,4 +93,4 @@ scout-mcp also runs as a paid HTTP API at `https://scout.hugen.tokyo` via the [x
 
 ## License
 
-Proprietary. Source code is provided for transparency and MCP client compatibility evaluation.
+MIT
