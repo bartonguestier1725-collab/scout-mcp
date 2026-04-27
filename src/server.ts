@@ -380,7 +380,7 @@ async function startServer() {
         usage: "import x402_pay; r = x402_pay.get('https://scout.hugen.tokyo/scout/hn?q=your+query')",
       },
       intel: {
-        info: "Need deeper analysis? Intel combines 4+ data sources with AI risk verdict in one call ($0.50)",
+        info: "AI-synthesized risk analysis for tokens, wallets, contracts — aggregates 4+ sources with 0-100 risk scoring and actionable verdict ($0.50)",
         example: "https://intel.hugen.tokyo/intel/token-report?address=0xdac17f958d2ee523a2206206994597c13d831ec7&chain=base",
       },
     };
