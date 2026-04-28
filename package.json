@@ -5,7 +5,8 @@
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "scout-cli": "build/cli.js"
+    "scout-cli": "build/cli.js",
+    "scout-mcp": "build/index.js"
   },
   "scripts": {
     "build": "tsc && mkdir -p build/data && cp src/data/*.json build/data/",
